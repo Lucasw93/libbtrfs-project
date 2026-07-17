@@ -1,0 +1,152 @@
+use crate::{
+    bindings::btrfs_ioctl_get_subvol_info_args, tree_search::tree_item::RootItem, util::IoResult,
+};
+use std::fs::OpenOptions;
+use std::os::fd::OwnedFd;
+use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+use std::{
+    ffi::OsStr,
+    io::ErrorKind,
+    path::{Component, Path, MAIN_SEPARATOR as SEP},
+    ptr::write,
+};
+
+/// Fill the name field for btrfs_ioctl_vol_args_v2 after checking if name is valid
+pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResult<()>
+{
+    if name.contains(&(SEP as u8)) {
+        Err(ErrorKind::InvalidInput.into())
+    } else {
+        set_vol_name(name, dst)
+    }
+}
+
+pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResult<()>
+{
+    if name == Component::CurDir.as_os_str().as_bytes()
+        || name == Component::ParentDir.as_os_str().as_bytes()
+    {
+        Err(ErrorKind::AlreadyExists.into())
+    } else if name.is_empty() || name.contains(&b'\0') || copy_bytes_to_slice!(name, dst) {
+        Err(ErrorKind::InvalidInput.into())
+    } else {
+        Ok(())
+    }
+}
+
+#[inline(always)]
+fn parse_parent_and_name(path: &Path) -> (&OsStr, &[u8])
+{
+    let mut bytes = path.as_os_str().as_bytes();
+
+    if let Some(p) = bytes.iter().rposition(|b| *b != SEP as u8) {
+        bytes = &bytes[..p + 1];
+    }
+
+    let (dirname, basename) = match bytes.iter().rposition(|b| *b == SEP as u8) {
+        Some(p) => (
+            if p == 0 {
+                Component::RootDir.as_os_str()
+            } else {
+                OsStr::from_bytes(&bytes[..p])
+            },
+            &bytes[p + 1..],
+        ),
+        None => (Component::CurDir.as_os_str(), bytes),
+    };
+
+    (dirname, basename)
+}
+
+/// Returns the parent dir and name as a tuple for a given path.
+/// If the path contains invalid utf-8 then [`InvalidData`] is returned
+pub fn open_parent_with_name(path: &Path) -> IoResult<(OwnedFd, &[u8])>
+{
+    let (dirname, basename) = parse_parent_and_name(path);
+
+    let parent = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY)
+        .open(dirname)?;
+
+    Ok((parent.into(), basename))
+}
+
+/// Fill the relevant fields of a [`btrfs_ioctl_get_subvol_info_args`] struct from a [`RootItem`].
+pub fn subvol_info_args_from_root_item(
+    ri: RootItem<'_>,
+    args: *mut btrfs_ioctl_get_subvol_info_args,
+)
+{
+    unsafe {
+        write(&raw mut (*args).generation, ri.generation());
+        write(&raw mut (*args).flags, ri.flags());
+        write(&raw mut (*args).uuid, ri.uuid().into_bytes());
+        write(&raw mut (*args).parent_uuid, ri.parent_uuid().into_bytes());
+        write(
+            &raw mut (*args).received_uuid,
+            ri.received_uuid().into_bytes(),
+        );
+        write(&raw mut (*args).ctransid, ri.ctransid());
+        write(&raw mut (*args).otransid, ri.otransid());
+        write(&raw mut (*args).stransid, ri.stransid());
+        write(&raw mut (*args).rtransid, ri.rtransid());
+        write(&raw mut (*args).ctime, ri.ctime().into());
+        write(&raw mut (*args).otime, ri.otime().into());
+        write(&raw mut (*args).stime, ri.stime().into());
+        write(&raw mut (*args).rtime, ri.rtime().into());
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
+    #[test]
+    fn test_parsing_parent_and_name()
+    {
+        let mut path;
+        let mut dir;
+        let mut name;
+        // ================================================================
+        path = Path::new("/foo");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("/", dir);
+        assert_eq!(OsStr::from_bytes(b"foo"), OsStr::from_bytes(name));
+        // ================================================================
+        path = Path::new("/abc///");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("/", dir);
+        assert_eq!(OsStr::from_bytes(b"abc"), OsStr::from_bytes(name));
+        // ================================================================
+        path = Path::new("/");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("/", dir);
+        assert_eq!(OsStr::from_bytes(b""), OsStr::from_bytes(name));
+        // ================================================================
+        path = Path::new("/a/b/c///");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("/a/b", dir);
+        assert_eq!(OsStr::from_bytes(b"c"), OsStr::from_bytes(name));
+        // ================================================================
+        path = Path::new("a/b/c///");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("a/b", dir);
+        assert_eq!(OsStr::from_bytes(b"c"), OsStr::from_bytes(name));
+        // ================================================================
+        path = Path::new("a/b/c///a/");
+        (dir, name) = parse_parent_and_name(path);
+
+        assert_eq!("a/b/c//", dir);
+        assert_eq!(OsStr::from_bytes(b"a"), OsStr::from_bytes(name));
+    }
+}

@@ -1,0 +1,19 @@
+[package]
+name = "libbtrfs-bindings"
+version = "0.0.0"
+edition = "2024"
+
+publish = false
+
+[dependencies.bindgen]
+version = "0.72"
+default-features = false
+features = ["runtime"]
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.reqwest]
+version = "0.13"
+features = ["blocking", "json"]

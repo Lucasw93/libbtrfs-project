@@ -1,0 +1,61 @@
+[package]
+name = "libbtrfs"
+version = "0.0.20"
+edition = "2024"
+rust-version = "1.85"
+
+description = "Rust library for working with the btrfs filesystem"
+documentation = "https://docs.rs/libbtrfs"
+
+keywords = ["btrfs", "linux"]
+categories = ["api-bindings", "filesystem", "os::linux-apis"]
+
+readme.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true 
+
+exclude = [ "TODO" ]
+
+[lib]
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "allow"
+missing_docs = "warn"
+
+[features]
+default = []
+debug = []
+unstable = ["dep:crc32c"]
+use-syscalls = ["dep:syscalls"]
+use-crc-fast = ['dep:crc-fast']
+
+# deps
+
+[dependencies.bitflags]
+version = "2"
+
+[dependencies.libc]
+version = "0.2.149"
+
+[dependencies.uuid]
+version = "1"
+
+# deps - optional
+
+[dependencies.crc32c]
+optional = true
+version = "0.6"
+
+[dependencies.crc-fast]
+optional = true
+version = "1"
+
+[dependencies.syscalls]
+optional = true
+version = "0.8"
+
+# dev-deps
+
+[dev-dependencies.tempfile]
+version = "3"
