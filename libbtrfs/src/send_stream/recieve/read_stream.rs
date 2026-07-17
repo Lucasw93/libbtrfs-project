@@ -2,8 +2,8 @@ use super::{receive_stream::ReceiveStream, tlv::*};
 use libc::{dev_t, gid_t, mode_t, off_t, uid_t};
 use std::{
     io::{self, Read},
-    sync::atomic::{AtomicU64, Ordering},
     sync::Arc,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub struct SendStream<'a, R>

@@ -7,8 +7,6 @@
 //! removed when the TempDir goes out of scope.
 //! SEE: btrfs(5) - FILESYSTEM FEATURES, rmdir_subvol
 //! <https://manpages.debian.org/bullseye/btrfs-progs/btrfs.5.en.html#FILESYSTEM_FEATURES>
-//!
-//!
 use std::{env, io::ErrorKind, path::PathBuf};
 use tempfile::TempDir;
 

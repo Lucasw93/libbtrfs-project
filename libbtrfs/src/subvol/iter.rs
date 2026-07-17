@@ -2,26 +2,26 @@
 //! This module will likley be removed in a future version as it is not constitant of the design
 //! goals of the library. To iterate over subvolumes in a btrfs filesystme see the examples in
 //! [`crate::subvol::get_rootref`] or [`crate::tree_search`].
-use super::{btrfs_ioctl, ErrorKind, IoResult, SearchBuilder, SubvolInfo};
+use super::{ErrorKind, IoResult, SearchBuilder, SubvolInfo, btrfs_ioctl};
 use crate::{
+    Flags,
     bindings::{
-        btrfs_ioctl_get_subvol_rootref_args, BTRFS_IOC_GET_SUBVOL_ROOTREF, BTRFS_ROOT_ITEM_KEY,
-        BTRFS_ROOT_REF_KEY,
+        BTRFS_IOC_GET_SUBVOL_ROOTREF, BTRFS_ROOT_ITEM_KEY, BTRFS_ROOT_REF_KEY,
+        btrfs_ioctl_get_subvol_rootref_args,
     },
     lookup::{Lookup, UserLookup},
     subvol,
-    tree_search::tree_item::{RootRef, TreeItemName},
     tree_search::TreeId,
+    tree_search::tree_item::{RootRef, TreeItemName},
     tree_search::{SearchKeyBuilder, TreeSearch},
-    util::{subvol_info_args_from_root_item, OptionFd},
-    Flags,
+    util::{OptionFd, subvol_info_args_from_root_item},
 };
 use std::os::fd::AsFd;
 use std::{
     collections::VecDeque,
     fs::File,
     os::unix::{fs::OpenOptionsExt, io::AsRawFd},
-    path::{Path, MAIN_SEPARATOR_STR as SEP},
+    path::{MAIN_SEPARATOR_STR as SEP, Path},
 };
 
 /// Entries returned by [`Iter`]

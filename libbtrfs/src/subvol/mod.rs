@@ -3,16 +3,16 @@
 //! Basic management of subvolumes in a btrfs filesystem.
 use crate::{
     bindings::{
-        btrfs_ioctl_get_subvol_info_args, btrfs_ioctl_timespec, btrfs_ioctl_vol_args_v2,
         BTRFS_DIR_ITEM_KEY, BTRFS_FIRST_FREE_OBJECTID, BTRFS_IOC_DEFAULT_SUBVOL,
         BTRFS_IOC_GET_SUBVOL_INFO, BTRFS_IOC_SNAP_CREATE_V2, BTRFS_IOC_SNAP_DESTROY_V2,
         BTRFS_IOC_SUBVOL_CREATE_V2, BTRFS_IOC_SUBVOL_GETFLAGS, BTRFS_IOC_SUBVOL_SETFLAGS,
         BTRFS_ROOT_TREE_DIR_OBJECTID, BTRFS_SUBVOL_RDONLY, BTRFS_SUBVOL_SPEC_BY_ID,
+        btrfs_ioctl_get_subvol_info_args, btrfs_ioctl_timespec, btrfs_ioctl_vol_args_v2,
     },
     fs, lookup,
     tree_search::tree_item::{DirItem, RootBackref, TreeItem, TreeItemName},
     tree_search::{SearchBuilder, SearchKeyBuilder, TreeId},
-    util::{btrfs_ioctl, open_parent_with_name, set_subvol_name, IoResult},
+    util::{IoResult, btrfs_ioctl, open_parent_with_name, set_subvol_name},
 };
 use std::{
     ffi::{CStr, OsString},
@@ -28,13 +28,13 @@ use uuid::Uuid;
 // To be removed. See note.
 mod iter;
 #[doc(hidden)]
-pub use iter::{walk, walk_user, Iter, IterUser, SubvolEntry};
+pub use iter::{Iter, IterUser, SubvolEntry, walk, walk_user};
 
 mod rootref;
-pub use rootref::{get_rootref, SubvolRootRef};
+pub use rootref::{SubvolRootRef, get_rootref};
 
 mod info;
-pub use info::{get_boxed_info, get_info, get_info_by_id, SubvolInfo, Timespec};
+pub use info::{SubvolInfo, Timespec, get_boxed_info, get_info, get_info_by_id};
 
 /// Btrfs subvolume snapshots
 pub mod snap

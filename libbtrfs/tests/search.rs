@@ -1,4 +1,4 @@
-use libbtrfs::tree_search::{tree_item::*, SearchBuilder, SearchKeyBuilder, TreeId};
+use libbtrfs::tree_search::{SearchBuilder, SearchKeyBuilder, TreeId, tree_item::*};
 
 fn _print_item_type(key: u32)
 {
@@ -29,7 +29,6 @@ fn search_boxed() -> std::io::Result<()>
         .new_boxed(nalloc)
         .search(|_| None)?
         .for_each(|item| {
-
             eprintln!("{:=<77}", "");
             eprintln!(
                 "\n (objectid: {},  type: {},  offset: {}  --  transid: {},  len: {}) \n",

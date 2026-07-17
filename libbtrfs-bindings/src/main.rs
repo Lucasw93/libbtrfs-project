@@ -51,7 +51,7 @@ fn get_version_string(client: &Client) -> reqwest::Result<String>
 }
 
 fn write_btrfs_header(mut uapi_dir: PathBuf, version: &str, client: &Client)
-    -> reqwest::Result<()>
+-> reqwest::Result<()>
 {
     const URL_BASE: &'static str =
         "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain";

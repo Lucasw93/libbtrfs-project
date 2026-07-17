@@ -1,10 +1,10 @@
 //! Btrfs filesystem lookups
 use crate::{
     bindings::{
-        btrfs_ioctl_ino_lookup_args, btrfs_ioctl_ino_lookup_user_args, BTRFS_FIRST_FREE_OBJECTID,
-        BTRFS_IOC_INO_LOOKUP, BTRFS_IOC_INO_LOOKUP_USER,
+        BTRFS_FIRST_FREE_OBJECTID, BTRFS_IOC_INO_LOOKUP, BTRFS_IOC_INO_LOOKUP_USER,
+        btrfs_ioctl_ino_lookup_args, btrfs_ioctl_ino_lookup_user_args,
     },
-    util::{btrfs_ioctl, IoError, IoResult, KernelStr, OptionFd},
+    util::{IoError, IoResult, KernelStr, OptionFd, btrfs_ioctl},
 };
 #[allow(unused_imports)]
 use std::io::ErrorKind;
@@ -91,7 +91,7 @@ impl UserLookup<'_>
     ///
     /// > `dirid` is not the directory in which the subvolume, `treeid` is rooted.
     pub fn path_str(&mut self, dirid: u64, treeid: u64)
-        -> IoResult<(KernelStr<'_>, KernelStr<'_>)>
+    -> IoResult<(KernelStr<'_>, KernelStr<'_>)>
     {
         unsafe {
             let arg_ptr = self.0.as_mut_ptr();

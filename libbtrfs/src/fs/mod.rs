@@ -1,18 +1,18 @@
 //! Btrfs filesystem operations.
 use crate::{
+    Flags,
     bindings::{
-        btrfs_ioctl_fs_info_args, btrfs_ioctl_space_args, btrfs_ioctl_space_info,
         BTRFS_FS_INFO_FLAG_CSUM_INFO, BTRFS_FS_INFO_FLAG_GENERATION,
         BTRFS_FS_INFO_FLAG_METADATA_UUID, BTRFS_IOC_FS_INFO, BTRFS_IOC_SPACE_INFO,
+        btrfs_ioctl_fs_info_args, btrfs_ioctl_space_args, btrfs_ioctl_space_info,
     },
-    util::{btrfs_ioctl, IoResult},
-    Flags,
+    util::{IoResult, btrfs_ioctl},
 };
 use std::{
-    alloc::{alloc, dealloc, handle_alloc_error, Layout},
+    alloc::{Layout, alloc, dealloc, handle_alloc_error},
     ffi::CString,
     fs::File,
-    mem::{align_of, size_of, MaybeUninit},
+    mem::{MaybeUninit, align_of, size_of},
     os::fd::{AsFd, AsRawFd},
     os::unix::prelude::OsStrExt,
     path::Path,
@@ -146,7 +146,7 @@ pub fn is_btrfs<P: AsRef<Path>>(fs: P) -> IoResult<bool>
 /// # Examples
 ///
 /// ```no_run
-/// use libbtrfs::{fs, Flags};
+/// use libbtrfs::{Flags, fs};
 ///
 /// let fs_info = fs::info("/", Flags::CSUM_INFO)?;
 ///

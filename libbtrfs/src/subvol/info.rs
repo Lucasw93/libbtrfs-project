@@ -1,7 +1,7 @@
 use super::*;
 use crate::tree_search::tree_item::RootRef;
-use crate::util::subvol_info_args_from_root_item;
 use crate::util::KernelStr;
+use crate::util::subvol_info_args_from_root_item;
 use std::ptr::{write, write_bytes};
 
 /// Describes time in seonds and nanoseconds

@@ -4,13 +4,13 @@
 //! well as structures which provide information about devices in a btrfs filesystem.
 use crate::{
     bindings::{
-        btrfs_ioctl_dev_info_args, btrfs_ioctl_get_dev_stats, btrfs_ioctl_vol_args,
-        btrfs_ioctl_vol_args_v2, BTRFS_DEVICE_SPEC_BY_ID, BTRFS_DEV_STAT_CORRUPTION_ERRS,
-        BTRFS_DEV_STAT_FLUSH_ERRS, BTRFS_DEV_STAT_GENERATION_ERRS, BTRFS_DEV_STAT_READ_ERRS,
-        BTRFS_DEV_STAT_VALUES_MAX, BTRFS_DEV_STAT_WRITE_ERRS, BTRFS_IOC_ADD_DEV,
-        BTRFS_IOC_DEV_INFO, BTRFS_IOC_GET_DEV_STATS, BTRFS_IOC_RM_DEV, BTRFS_IOC_RM_DEV_V2,
+        BTRFS_DEV_STAT_CORRUPTION_ERRS, BTRFS_DEV_STAT_FLUSH_ERRS, BTRFS_DEV_STAT_GENERATION_ERRS,
+        BTRFS_DEV_STAT_READ_ERRS, BTRFS_DEV_STAT_VALUES_MAX, BTRFS_DEV_STAT_WRITE_ERRS,
+        BTRFS_DEVICE_SPEC_BY_ID, BTRFS_IOC_ADD_DEV, BTRFS_IOC_DEV_INFO, BTRFS_IOC_GET_DEV_STATS,
+        BTRFS_IOC_RM_DEV, BTRFS_IOC_RM_DEV_V2, btrfs_ioctl_dev_info_args,
+        btrfs_ioctl_get_dev_stats, btrfs_ioctl_vol_args, btrfs_ioctl_vol_args_v2,
     },
-    util::{btrfs_ioctl, set_vol_name, IoResult},
+    util::{IoResult, btrfs_ioctl, set_vol_name},
 };
 use std::{
     fs::File,
@@ -21,7 +21,7 @@ use std::{
 };
 
 mod info;
-pub use info::{boxed_info, info, iter, DevInfo};
+pub use info::{DevInfo, boxed_info, info, iter};
 
 /// Stats for a btrfs device
 ///

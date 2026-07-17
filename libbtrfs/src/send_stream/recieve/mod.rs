@@ -12,7 +12,7 @@ mod read_stream;
 mod receive_stream;
 mod tlv;
 
-use read_stream::{process_send_stream, SendStream};
+use read_stream::{SendStream, process_send_stream};
 use receive_stream::ReceiveStream;
 use tlv::BTRFS_SEND_BUF_SIZE_V1;
 
@@ -22,7 +22,7 @@ use std::{
     io::Read,
     mem::MaybeUninit,
     path::Path,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{Arc, atomic::AtomicU64},
 };
 
 pub fn receive_stream<P: AsRef<Path>, S: Read>(

@@ -1,10 +1,10 @@
 use super::*;
 use crate::{
-    bindings::{
-        btrfs_ioctl_get_subvol_rootref_args, btrfs_ioctl_get_subvol_rootref_args__bindgen_ty_1,
-        BTRFS_IOC_GET_SUBVOL_ROOTREF,
-    },
     KernelStr,
+    bindings::{
+        BTRFS_IOC_GET_SUBVOL_ROOTREF, btrfs_ioctl_get_subvol_rootref_args,
+        btrfs_ioctl_get_subvol_rootref_args__bindgen_ty_1,
+    },
 };
 
 /// Subvolume ID and dirid for a subvolume that references a root subvolume.

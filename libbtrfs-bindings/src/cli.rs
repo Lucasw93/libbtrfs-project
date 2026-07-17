@@ -31,9 +31,7 @@ fn show_help() -> !
     eprintln!(concat!(
         "Usage: libbtrfs-bindings [OPTIONS]\n",
         "Generate rust bindings libbtrfs\n\n",
-
         "Options:\n\n",
-
         "  --force, -f           Download and generate bindings even if VERSION.txt is up to date with Linux latest_stable\n",
         "  --help                Dispay this message\n",
     ));

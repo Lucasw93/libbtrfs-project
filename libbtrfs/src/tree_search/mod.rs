@@ -6,8 +6,8 @@
 //!
 //! ```no_run
 //! use libbtrfs::tree_search::{
-//!     tree_item::{RootRef, TreeItemName},
 //!     SearchBuilder, SearchKeyBuilder, TreeId,
+//!     tree_item::{RootRef, TreeItemName},
 //! };
 //!
 //! let mut search = SearchBuilder::try_from("/")?
@@ -38,13 +38,13 @@
 //! ````
 use crate::{
     bindings::{
-        btrfs_ioctl_search_args, btrfs_ioctl_search_args_v2, btrfs_ioctl_search_header,
-        btrfs_ioctl_search_key, BTRFS_IOC_TREE_SEARCH, BTRFS_IOC_TREE_SEARCH_V2,
+        BTRFS_IOC_TREE_SEARCH, BTRFS_IOC_TREE_SEARCH_V2, btrfs_ioctl_search_args,
+        btrfs_ioctl_search_args_v2, btrfs_ioctl_search_header, btrfs_ioctl_search_key,
     },
-    util::{btrfs_ioctl, IoError, IoResult, OptionFd},
+    util::{IoError, IoResult, OptionFd, btrfs_ioctl},
 };
 use std::{
-    alloc::{alloc, dealloc, handle_alloc_error, Layout},
+    alloc::{Layout, alloc, dealloc, handle_alloc_error},
     ffi::c_char,
     fs::File,
     marker::PhantomData,

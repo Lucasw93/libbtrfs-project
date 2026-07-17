@@ -7,7 +7,7 @@ use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::{
     ffi::OsStr,
     io::ErrorKind,
-    path::{Component, Path, MAIN_SEPARATOR as SEP},
+    path::{Component, MAIN_SEPARATOR as SEP, Path},
     ptr::write,
 };
 

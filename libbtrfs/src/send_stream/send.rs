@@ -1,18 +1,18 @@
 use crate::{
-    bindings::{btrfs_ioctl_send_args, BTRFS_IOC_SEND, BTRFS_SEND_FLAG_VERSION},
+    Flags,
+    bindings::{BTRFS_IOC_SEND, BTRFS_SEND_FLAG_VERSION, btrfs_ioctl_send_args},
     fs::io::is_btrfs,
     util::btrfs_ioctl,
     util::send::supported_send_version,
     util::{IoError, IoResult},
-    Flags,
 };
 use libc::F_SETPIPE_SZ;
 
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{Arc, atomic::AtomicU64};
 
 use std::{
     fs::File,
-    io::{pipe, stdout, ErrorKind, PipeReader, PipeWriter},
+    io::{ErrorKind, PipeReader, PipeWriter, pipe, stdout},
     mem::MaybeUninit,
     os::fd::{AsFd, AsRawFd, OwnedFd},
     path::{Path, PathBuf},

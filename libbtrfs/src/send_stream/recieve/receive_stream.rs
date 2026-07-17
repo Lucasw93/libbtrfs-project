@@ -1,13 +1,13 @@
 use crate::bindings::btrfs_ioctl_received_subvol_args;
 use crate::{
-    bindings::{btrfs_ioctl_timespec, BTRFS_IOC_SET_RECEIVED_SUBVOL},
-    util::{btrfs_ioctl, IoResult},
+    bindings::{BTRFS_IOC_SET_RECEIVED_SUBVOL, btrfs_ioctl_timespec},
+    util::{IoResult, btrfs_ioctl},
 };
 
 use libc::{
-    c_char, c_void, dev_t, gid_t, mode_t, off_t, size_t, timespec, uid_t, AT_FDCWD,
-    AT_SYMLINK_NOFOLLOW, O_CREAT, O_TRUNC, O_WRONLY, PATH_MAX, S_IFIFO, S_IFMT, S_IFSOCK, S_IRUSR,
-    S_IRWXU, S_IWUSR,
+    AT_FDCWD, AT_SYMLINK_NOFOLLOW, O_CREAT, O_TRUNC, O_WRONLY, PATH_MAX, S_IFIFO, S_IFMT,
+    S_IFSOCK, S_IRUSR, S_IRWXU, S_IWUSR, c_char, c_void, dev_t, gid_t, mode_t, off_t, size_t,
+    timespec, uid_t,
 };
 use std::{
     ffi::OsStr,
@@ -71,7 +71,7 @@ impl ReceiveStream
     }
 
     pub(super) fn subvol(&mut self, path: &[u8], uuid: Uuid, ctransid: u64)
-        -> IoResult<Option<()>>
+    -> IoResult<Option<()>>
     {
         if !self.primary_path_buf.is_empty() {
             return receive_error!("data stream is invalid");
