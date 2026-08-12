@@ -5,14 +5,14 @@ use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
 use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::{
-    ffi::OsStr,
+    ffi::{c_char, OsStr},
     io::ErrorKind,
     path::{Component, MAIN_SEPARATOR as SEP, Path},
     ptr::write,
 };
 
 /// Fill the name field for btrfs_ioctl_vol_args_v2 after checking if name is valid
-pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResult<()>
+pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
     if name.contains(&(SEP as u8)) {
         Err(ErrorKind::InvalidInput.into())
@@ -21,7 +21,7 @@ pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResu
     }
 }
 
-pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResult<()>
+pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
     if name == Component::CurDir.as_os_str().as_bytes()
         || name == Component::ParentDir.as_os_str().as_bytes()
