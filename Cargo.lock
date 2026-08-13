@@ -12,6 +12,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "argv"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e49015e9bcf19ab770c44d0b084814c444d6f90a3a0bff1c9d670971e47de3ea"
+
+[[package]]
 name = "atomic-waker"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -738,7 +744,9 @@ dependencies = [
  "bitflags",
  "crc-fast",
  "crc32c",
+ "either",
  "libc",
+ "rtrb",
  "syscalls",
  "tempfile",
  "uuid",
@@ -748,6 +756,7 @@ dependencies = [
 name = "libbtrfs-bindings"
 version = "0.0.0"
 dependencies = [
+ "argv",
  "bindgen",
  "reqwest",
  "serde",
@@ -1062,6 +1071,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "rtrb"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ade083ccbb4bf536df69d1f6432cc23deb7acccff86b183f3923a6fd56a1153"
 
 [[package]]
 name = "rustc-hash"

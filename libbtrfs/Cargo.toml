@@ -2,30 +2,24 @@
 name = "libbtrfs"
 version = "0.0.30"
 description = "Rust library for working with the btrfs filesystem"
-
 keywords = ["btrfs", "linux"]
 categories = ["api-bindings", "filesystem", "os::linux-apis"]
+exclude = ["TODO"]
 
+authors.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+documentation.workspace = true
 readme.workspace = true
 license.workspace = true
-authors.workspace = true
 repository.workspace = true 
-edition.workspace = true
-rust-version.workspace = true
-documentation.workspace = true
-
-exclude = [ "TODO" ]
 
 [lib]
-
-[lints.rust]
-unsafe_op_in_unsafe_fn = "allow"
-missing_docs = "warn"
 
 [features]
 default = []
 debug = []
-unstable = ["dep:crc32c"]
+unstable = ["dep:crc32c", "dep:rtrb"]
 use-syscalls = ["dep:syscalls"]
 use-crc-fast = ['dep:crc-fast']
 
@@ -33,6 +27,9 @@ use-crc-fast = ['dep:crc-fast']
 
 [dependencies.bitflags]
 version = "2"
+
+[dependencies.either]
+version = "1"
 
 [dependencies.libc]
 version = "0.2.149"
@@ -50,6 +47,10 @@ version = "0.6"
 optional = true
 version = "1"
 
+[dependencies.rtrb]
+optional = true
+version = "0.3"
+
 [dependencies.syscalls]
 optional = true
 version = "0.8"
@@ -58,3 +59,7 @@ version = "0.8"
 
 [dev-dependencies.tempfile]
 version = "3"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "allow"
+missing_docs = "warn"

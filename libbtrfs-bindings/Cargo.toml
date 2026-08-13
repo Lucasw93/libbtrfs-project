@@ -7,6 +7,9 @@ rust-version.workspace = true
 
 publish = false
 
+[dependencies.argv]
+version = "0.1"
+
 [dependencies.bindgen]
 version = "0.72"
 default-features = false
