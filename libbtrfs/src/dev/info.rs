@@ -1,6 +1,5 @@
 use super::*;
-use crate::util::{KernelStr, OptionFd};
-use std::ffi::CStr;
+use crate::ffi::UnixPath;
 use uuid::Uuid;
 
 /// Information about a btrfs device
@@ -36,17 +35,9 @@ impl DevInfo
     }
 
     /// Path for this device
-    pub fn path_str(&self) -> KernelStr<'_>
+    pub fn path(&self) -> &UnixPath
     {
-        CStr::from_bytes_until_nul(&self.0.path)
-            .unwrap()
-            .to_string_lossy()
-    }
-
-    /// Path for this device
-    pub fn path_bytes(&self) -> &[u8]
-    {
-        CStr::from_bytes_until_nul(&self.0.path).unwrap().to_bytes()
+        unsafe { UnixPath::from_ptr(self.0.path.as_ptr().cast()) }
     }
 
     /// Filesystem uuid
@@ -108,13 +99,13 @@ pub fn iter<P: AsRef<Path>>(
     fs: P,
 ) -> IoResult<impl Iterator<Item = IoResult<DevInfo>> + ExactSizeIterator>
 {
-    File::open(fs).and_then(|f| Iter::new_internal(OptionFd::Owned(f.into())))
+    File::open(fs).and_then(|f| Iter::new_internal(f))
 }
 
 pub(super) mod io
 {
     use super::*;
-    use std::os::fd::{AsFd, BorrowedFd};
+    use std::os::fd::AsFd;
 
     /// See [super::info()]
     pub fn info<R: AsFd>(devid: u64, resource: R) -> IoResult<DevInfo>
@@ -137,26 +128,26 @@ pub(super) mod io
     }
 
     /// See [super::iter()]
-    pub fn iter<'a>(
-        fd: BorrowedFd<'a>,
-    ) -> IoResult<impl Iterator<Item = IoResult<DevInfo>> + ExactSizeIterator + use<'a>>
+    pub fn iter<R: AsFd>(
+        fd: R,
+    ) -> IoResult<impl Iterator<Item = IoResult<DevInfo>> + ExactSizeIterator>
     {
-        Iter::new_internal(OptionFd::Borrowed(fd))
+        Iter::new_internal(fd)
     }
 }
 
-struct Iter<'r>
+struct Iter<R: AsFd>
 {
-    fs: OptionFd<'r>,
+    fs: R,
     num_devices: u64,
     max_id: u64,
     found_devices: u64,
     last_id: u64,
 }
 
-impl<'r> Iter<'r>
+impl<R: AsFd> Iter<R>
 {
-    fn new_internal(fs: OptionFd<'r>) -> IoResult<Self>
+    fn new_internal(fs: R) -> IoResult<Self>
     {
         crate::fs::io::info(fs.as_fd(), crate::Flags::NONE).map(|fs_info| Iter {
             fs,
@@ -168,9 +159,9 @@ impl<'r> Iter<'r>
     }
 }
 
-impl ExactSizeIterator for Iter<'_> {}
+impl<R: AsFd> ExactSizeIterator for Iter<R> {}
 
-impl Iterator for Iter<'_>
+impl<R: AsFd> Iterator for Iter<R>
 {
     type Item = IoResult<DevInfo>;
 

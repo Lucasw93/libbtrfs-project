@@ -1,4 +1,5 @@
-use libbtrfs::tree_search::{SearchBuilder, SearchKeyBuilder, TreeId, tree_item::*};
+#![allow(missing_docs)]
+use libbtrfs::tree_search::{Query, SearchBuilder, SearchKeyBuilder, TreeId, tree_item::*};
 
 fn _print_item_type(key: u32)
 {
@@ -22,12 +23,12 @@ fn search_boxed() -> std::io::Result<()>
     let nr_items = 20;
     eprintln!("RUNNING BOXED SARCH FOR {nr_items} ITEMS WITH BUF SIZE: {nalloc}");
 
-    SearchBuilder::try_from("/")?
+    SearchBuilder::from_path("/")?
         .tree(TreeId::RootTree)
         .item_limit(20)
         .objectid(256..)
-        .new_boxed(nalloc)
-        .search(|_| None)?
+        .build_boxed(nalloc)
+        .query(|_| None)?
         .for_each(|item| {
             eprintln!("{:=<77}", "");
             eprintln!(
@@ -42,7 +43,7 @@ fn search_boxed() -> std::io::Result<()>
             if let Some(ri) = item.get::<RootItem>() {
                 eprintln!(" - UUID: {:?}", ri.uuid())
             } else if let Some(rr) = item.get::<RootRef>() {
-                eprintln!(" - name: {:?}", rr.name_str())
+                eprintln!(" - name: {:?}", String::from_utf8_lossy( rr.name_as_bytes().unwrap() ))
             }
         });
 
@@ -52,14 +53,14 @@ fn search_boxed() -> std::io::Result<()>
 #[test]
 fn search_subvols_example() -> std::io::Result<()>
 {
-    let mut search = SearchBuilder::try_from("/")?
+    let mut search = SearchBuilder::from_path("/")?
         .item_limit(u32::MAX)
         .tree(TreeId::RootTree)
         .objectid(5..u64::MAX)
-        .new();
+        .build();
 
     loop {
-        let items = search.search(|(objectid, ..)| (objectid + 1, 0, 0))?;
+        let items = search.query(|(objectid, ..)| (objectid + 1, 0, 0))?;
 
         if items.len() == 0 {
             break;
@@ -71,7 +72,9 @@ fn search_subvols_example() -> std::io::Result<()>
                     "ID {} level {} name {}",
                     item.offset(),
                     item.objectid(),
-                    rr.name_str()?
+                    String::from_utf8_lossy(
+                        rr.name_as_bytes()?
+                    )
                 )
             }
         }

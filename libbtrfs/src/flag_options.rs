@@ -16,7 +16,8 @@ bitflags! {
 
         const ASCENDING = 0x0;
         const DESCENDING = 0x1;
-        const GET_INFO = 0x2;
+        const PRE_ORDER = 0x0;
+        const POST_ORDER = 0x2;
         const GET_PATH = 0x4;
 
         // ==========================================================
@@ -27,7 +28,7 @@ bitflags! {
         const METADATA_UUID = 0x20;
 
         // ==========================================================
-        // Send Flags
+        // Send Flags (depreciated)
 
         const NO_FILE_DATA = 0x40;
         const OMIT_STREAM_HEADER = 0x80;
@@ -87,6 +88,9 @@ impl Flags
         Ok(flags)
     }
 
+    /*
+     * The SendBuilder now has a function for each flag instead of single flags functions 
+     * where these flags can be passed in.
     const SEND_MASK: u64 = Flags::NO_FILE_DATA.bits()
         | Flags::OMIT_STREAM_HEADER.bits()
         | Flags::OMIT_END_CMD.bits()
@@ -108,4 +112,5 @@ impl Flags
 
         Ok(flags)
     }
+    */
 }

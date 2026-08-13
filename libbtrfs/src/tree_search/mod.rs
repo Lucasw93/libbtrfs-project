@@ -6,18 +6,18 @@
 //!
 //! ```no_run
 //! use libbtrfs::tree_search::{
-//!     SearchBuilder, SearchKeyBuilder, TreeId,
+//!     Query, SearchBuilder, SearchKeyBuilder, TreeId,
 //!     tree_item::{RootRef, TreeItemName},
 //! };
 //!
-//! let mut search = SearchBuilder::try_from("/")?
+//! let mut search = SearchBuilder::from_path("/")?
 //!     .tree(TreeId::RootTree)
 //!     .item_limit(u32::MAX)
 //!     .objectid(5..u64::MAX)
-//!     .new();
+//!     .build();
 //!
 //! loop {
-//!     let items = search.search(|(objectid, ..)| (objectid + 1, 0, 0))?;
+//!     let items = search.query(|(objectid, ..)| (objectid + 1, 0, 0))?;
 //!
 //!     if items.len() == 0 {
 //!         break;
@@ -29,7 +29,7 @@
 //!                 "ID {} level {} name {}",
 //!                 item.offset(),
 //!                 item.objectid(),
-//!                 rr.name_str()?
+//!                 rr.name_as_os_str()?.display()
 //!             )
 //!         }
 //!     }
@@ -41,16 +41,15 @@ use crate::{
         BTRFS_IOC_TREE_SEARCH, BTRFS_IOC_TREE_SEARCH_V2, btrfs_ioctl_search_args,
         btrfs_ioctl_search_args_v2, btrfs_ioctl_search_header, btrfs_ioctl_search_key,
     },
-    util::{IoError, IoResult, OptionFd, btrfs_ioctl},
+    util::{IoResult, btrfs_ioctl},
 };
 use std::{
     alloc::{Layout, alloc, dealloc, handle_alloc_error},
-    ffi::c_char,
     fs::File,
     marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Bound, RangeBounds},
-    os::fd::{AsFd, BorrowedFd},
+    os::fd::AsFd,
     path::Path,
     ptr::{read_unaligned, write},
 };
@@ -147,25 +146,41 @@ where
     key: &'buf mut btrfs_ioctl_search_key,
 }
 
+/// Contains the Query::query() method for performing tree searches.
+pub trait Query
+{
+    /// Returns an iterator yeilding instances of [`SearchItem`].
+    ///
+    /// The [`ExactSizeIterator::len()`] method can be used to check how many items the search
+    /// returned.
+    fn query<'buf, F, K>(
+        &'buf mut self,
+        on_drop: F,
+    ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
+    where
+        K: FromDiskKey,
+        F: FnOnce(DiskKey) -> K;
+}
+
 // ============================================================================
 // Iterater. returned by the search method for both stack and heap searches
 
 /// Iterator over items of a btrfs tree search
-struct SearchIter<'buf, F, K>
+struct Iter<'buf, F, K>
 where
     K: FromDiskKey,
     F: FnOnce(DiskKey) -> K,
 {
-    buffer: *const c_char,
+    buffer: *const libc::c_char,
     index: usize,
     curr_offset: usize,
     prev_offset: usize,
     on_drop: FnOnDrop<'buf, F, K>,
 
-    _phantom: PhantomData<&'buf c_char>,
+    _phantom: PhantomData<&'buf libc::c_char>,
 }
 
-impl<F, K> Drop for SearchIter<'_, F, K>
+impl<F, K> Drop for Iter<'_, F, K>
 where
     K: FromDiskKey,
     F: FnOnce(DiskKey) -> K,
@@ -189,14 +204,14 @@ where
     }
 }
 
-impl<'buf, F, K> ExactSizeIterator for SearchIter<'buf, F, K>
+impl<'buf, F, K> ExactSizeIterator for Iter<'buf, F, K>
 where
     K: FromDiskKey,
     F: FnOnce(DiskKey) -> K,
 {
 }
 
-impl<'buf, F, K> Iterator for SearchIter<'buf, F, K>
+impl<'buf, F, K> Iterator for Iter<'buf, F, K>
 where
     K: FromDiskKey,
     F: FnOnce(DiskKey) -> K,
@@ -210,10 +225,10 @@ where
         }
         self.index -= 1;
 
-        let item = SearchItem {
-            header: unsafe { self.buffer.add(self.curr_offset).cast() },
-            _phantom: PhantomData,
-        };
+        let item = SearchItem(
+            unsafe { self.buffer.add(self.curr_offset).cast() },
+            PhantomData,
+        );
         self.prev_offset = self.curr_offset;
         self.curr_offset += item.total_len();
 
@@ -230,73 +245,73 @@ where
 // Item. Returned by the seach iterator
 
 /// Items returned from a btrfs tree search.
-pub struct SearchItem<'buf>
-{
-    header: *const btrfs_ioctl_search_header,
-    _phantom: PhantomData<&'buf c_char>,
-}
+#[derive(Clone, Copy)]
+pub struct SearchItem<'buf>(
+    *const btrfs_ioctl_search_header,
+    PhantomData<&'buf libc::c_char>,
+);
 
 impl<'buf> SearchItem<'buf>
 {
     /// Gets the object id for this item
     #[inline]
-    pub const fn objectid(&self) -> u64
+    pub const fn objectid(self) -> u64
     {
-        unsafe { read_unaligned(&raw const (*self.header).objectid) }
+        unsafe { read_unaligned(&raw const (*self.0).objectid) }
     }
 
     /// Gets the key type for this item
     #[inline]
-    pub const fn ty(&self) -> u32
+    pub const fn ty(self) -> u32
     {
-        unsafe { read_unaligned(&raw const (*self.header).type_) }
+        unsafe { read_unaligned(&raw const (*self.0).type_) }
     }
 
     /// Gets the offset for this item
     #[inline]
-    pub const fn offset(&self) -> u64
+    pub const fn offset(self) -> u64
     {
-        unsafe { read_unaligned(&raw const (*self.header).offset) }
+        unsafe { read_unaligned(&raw const (*self.0).offset) }
     }
 
     /// Return the disk sorting key for this item
-    pub const fn key(&self) -> DiskKey
+    pub const fn key(self) -> DiskKey
     {
-        let hdr = unsafe { read_unaligned(&raw const (*self.header)) };
+        let hdr = unsafe { read_unaligned(&raw const (*self.0)) };
 
         (hdr.objectid, hdr.type_, hdr.offset)
     }
 
     /// Gets the transaction id for this item
     #[inline]
-    pub const fn transid(&self) -> u64
+    pub const fn transid(self) -> u64
     {
-        unsafe { read_unaligned(&raw const (*self.header).transid) }
+        unsafe { read_unaligned(&raw const (*self.0).transid) }
     }
 
     /// Gets the data length for this item
     #[inline]
-    pub const fn len(&self) -> u32
+    pub const fn len(self) -> u32
     {
-        unsafe { read_unaligned(&raw const (*self.header).len) }
+        unsafe { read_unaligned(&raw const (*self.0).len) }
     }
 
     /// Cast the item as a [`TreeItem`] without checking the type.
     #[inline]
-    pub unsafe fn get_unchecked<T: TreeItem<'buf>>(&self) -> T
+    pub unsafe fn get_unchecked<T: TreeItem<'buf>>(self) -> T
     {
-        TreeItem::from_search_unckeched(unsafe { self.header.add(1).cast::<T>() })
+        TreeItem::from_search_unckeched(self.0.add(1).cast::<T>())
     }
 
     /// Attempt to cast the item as a [`TreeItem`].
     #[inline]
-    pub fn get<T: TreeItem<'buf>>(&self) -> Option<T>
+    pub fn get<T: TreeItem<'buf>>(self) -> Option<T>
     {
-        TreeItem::from_search(unsafe { self.header.add(1).cast::<T>() }, self.ty())
+        TreeItem::from_search(unsafe { self.0.add(1).cast::<T>() }, self.ty())
     }
 
     #[inline]
-    const fn total_len(&self) -> usize
+    const fn total_len(self) -> usize
     {
         size_of::<btrfs_ioctl_search_header>() + self.len() as usize
     }
@@ -307,13 +322,13 @@ impl<'buf> SearchItem<'buf>
 /// This struct is returned by the [`SearchBuilder::new()`] method.
 ///
 /// See the [`SearchKeyBuilder`] trait for updating the search key.
-pub struct TreeSearch<'r>
+pub struct TreeSearch<R: AsFd>
 {
-    fd: OptionFd<'r>,
+    resource: R,
     args: MaybeUninit<btrfs_ioctl_search_args>,
 }
 
-impl<'a> seal::SearchKeyBuilderExt for &'a mut TreeSearch<'_>
+impl<'a, R: AsFd> seal::SearchKeyBuilderExt for &'a mut TreeSearch<R>
 {
     #[inline(always)]
     fn get_key(&mut self) -> &mut self::btrfs_ioctl_search_key
@@ -321,15 +336,11 @@ impl<'a> seal::SearchKeyBuilderExt for &'a mut TreeSearch<'_>
         unsafe { &mut (*self.args.as_mut_ptr()).key }
     }
 }
-impl<'a> SearchKeyBuilder for &'a mut TreeSearch<'_> {}
+impl<'a, R: AsFd> SearchKeyBuilder for &'a mut TreeSearch<R> {}
 
-impl TreeSearch<'_>
+impl<R: AsFd> Query for TreeSearch<R>
 {
-    /// Returns an iterator yeilding instances of [`SearchItem`].
-    ///
-    /// The [`ExactSizeIterator::len()`] method can be used to check how many items the search
-    /// returned.
-    pub fn search<'buf, F, K>(
+    fn query<'buf, F, K>(
         &'buf mut self,
         on_drop: F,
     ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
@@ -337,7 +348,7 @@ impl TreeSearch<'_>
         K: FromDiskKey,
         F: FnOnce(DiskKey) -> K,
     {
-        let fd = self.fd.as_fd();
+        let fd = self.resource.as_fd();
         let args = self.args.as_mut_ptr();
         let key = unsafe { &mut (*args).key };
         let nr_items_in = key.nr_items;
@@ -347,7 +358,7 @@ impl TreeSearch<'_>
         let index = key.nr_items as usize;
         key.nr_items = nr_items_in;
 
-        Ok(SearchIter {
+        Ok(Iter {
             index,
             buffer: unsafe { &raw const (*args).buf }.cast(),
             on_drop: FnOnDrop { f: ManuallyDrop::new(on_drop), key },
@@ -367,13 +378,13 @@ impl TreeSearch<'_>
 /// [`SearchBuilder::new_boxed()`] method.
 ///
 /// See the [`SearchKeyBuilder`] trait for updating the search key.
-pub struct BoxedTreeSearch<'r>
+pub struct BoxedTreeSearch<R: AsFd>
 {
-    fd: OptionFd<'r>,
+    resource: R,
     args: *mut btrfs_ioctl_search_args_v2,
 }
 
-impl<'a> seal::SearchKeyBuilderExt for &'a mut BoxedTreeSearch<'_>
+impl<'a, R: AsFd> seal::SearchKeyBuilderExt for &'a mut BoxedTreeSearch<R>
 {
     #[inline(always)]
     fn get_key(&mut self) -> &mut self::btrfs_ioctl_search_key
@@ -382,9 +393,9 @@ impl<'a> seal::SearchKeyBuilderExt for &'a mut BoxedTreeSearch<'_>
     }
 }
 
-impl<'a> SearchKeyBuilder for &'a mut BoxedTreeSearch<'_> {}
+impl<'a, R: AsFd> SearchKeyBuilder for &'a mut BoxedTreeSearch<R> {}
 
-impl Drop for BoxedTreeSearch<'_>
+impl<R: AsFd> Drop for BoxedTreeSearch<R>
 {
     fn drop(&mut self)
     {
@@ -398,13 +409,9 @@ impl Drop for BoxedTreeSearch<'_>
     }
 }
 
-impl BoxedTreeSearch<'_>
+impl<R: AsFd> Query for BoxedTreeSearch<R>
 {
-    /// Returns an iterator yeilding instances of [`SearchItem`].
-    ///
-    /// The [`ExactSizeIterator::len()`] method can be used to check how many items the search
-    /// returned.
-    pub fn search<'buf, F, K>(
+    fn query<'buf, F, K>(
         &'buf mut self,
         on_drop: F,
     ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
@@ -412,7 +419,7 @@ impl BoxedTreeSearch<'_>
         K: FromDiskKey,
         F: FnOnce(DiskKey) -> K,
     {
-        let fd = self.fd.as_fd();
+        let fd = self.resource.as_fd();
         let args = self.args;
         let key = unsafe { &mut (*args).key };
         let nr_items_in = key.nr_items;
@@ -422,7 +429,7 @@ impl BoxedTreeSearch<'_>
         let index = key.nr_items as usize;
         key.nr_items = nr_items_in;
 
-        Ok(SearchIter {
+        Ok(Iter {
             index,
             buffer: unsafe { &raw const (*args).buf }.cast(),
             on_drop: FnOnDrop { f: ManuallyDrop::new(on_drop), key },
@@ -437,13 +444,13 @@ impl BoxedTreeSearch<'_>
 // Builder. Used to construct Tree searches both TreeSearch and BoxedTreeSearch
 
 /// Constructs either a [`TreeSearch`] or a [`BoxedTreeSearch`]
-pub struct SearchBuilder<'r>
+pub struct SearchBuilder<R: AsFd>
 {
     key: btrfs_ioctl_search_key,
-    fd: OptionFd<'r>,
+    resource: R,
 }
 
-impl seal::SearchKeyBuilderExt for SearchBuilder<'_>
+impl<R: AsFd> seal::SearchKeyBuilderExt for SearchBuilder<R>
 {
     #[inline(always)]
     fn get_key(&mut self) -> &mut self::btrfs_ioctl_search_key
@@ -452,66 +459,44 @@ impl seal::SearchKeyBuilderExt for SearchBuilder<'_>
     }
 }
 
-impl SearchKeyBuilder for SearchBuilder<'_> {}
+impl<R: AsFd> SearchKeyBuilder for SearchBuilder<R> {}
 
-impl<'r> From<BorrowedFd<'r>> for SearchBuilder<'r>
+impl SearchBuilder<File>
 {
-    fn from(value: BorrowedFd<'r>) -> Self
+    /// Constructs a new `SearchBuilder` from a path.
+    ///
+    /// This is fallible, see [`SearchBuilder::new()`] for an infallible variant.
+    pub fn from_path<P: AsRef<Path>>(path: P) -> IoResult<Self>
     {
-        Self {
-            fd: OptionFd::Borrowed(value),
+        Ok(Self {
             key: Default::default(),
-        }
-    }
-}
-
-impl TryFrom<&Path> for SearchBuilder<'_>
-{
-    type Error = IoError;
-
-    fn try_from(value: &Path) -> Result<Self, Self::Error>
-    {
-        File::open(value).map(|f| Self {
-            fd: OptionFd::Owned(f.into()),
-            key: Default::default(),
+            resource: File::open(path)?,
         })
     }
 }
 
-impl TryFrom<&str> for SearchBuilder<'_>
+impl<R: AsFd> SearchBuilder<R>
 {
-    type Error = IoError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error>
+    /// Constructs a new `SearchBuilder` from an IO resouce
+    pub fn new(resource: R) -> Self
     {
-        Self::try_from(Path::new(value))
+        Self { key: Default::default(), resource }
     }
-}
 
-impl<'r> From<OptionFd<'r>> for SearchBuilder<'r>
-{
-    fn from(value: OptionFd<'r>) -> Self
-    {
-        Self { fd: value, key: Default::default() }
-    }
-}
-
-impl<'fd> SearchBuilder<'fd>
-{
     /// Build a new [`TreeSearch`].
-    pub fn new(self) -> TreeSearch<'fd>
+    pub fn build(self) -> TreeSearch<R>
     {
         let mut args = MaybeUninit::<btrfs_ioctl_search_args>::uninit();
         let argp = args.as_mut_ptr();
         unsafe {
             write(&raw mut (*argp).key, self.key);
         }
-        TreeSearch { args, fd: self.fd }
+        TreeSearch { args, resource: self.resource }
     }
 
     /// Build a new [`BoxedTreeSearch`]. `BoxedTreeSearch` contains heap allocated memory which is
     /// baed on `buf_size`.
-    pub fn new_boxed(self, buf_size: u64) -> BoxedTreeSearch<'fd>
+    pub fn build_boxed(self, buf_size: u64) -> BoxedTreeSearch<R>
     {
         let size = buf_size as usize + size_of::<btrfs_ioctl_search_args_v2>();
         let align = align_of::<btrfs_ioctl_search_args_v2>();
@@ -530,7 +515,7 @@ impl<'fd> SearchBuilder<'fd>
             args
         };
 
-        BoxedTreeSearch { args, fd: self.fd }
+        BoxedTreeSearch { args, resource: self.resource }
     }
 }
 
@@ -661,7 +646,7 @@ mod seal
 /// ```no_run,rustfmt::skip
 /// use libbtrfs::tree_search::{SearchBuilder, SearchKeyBuilder, TreeId};
 ///
-/// SearchBuilder::try_from("/")?
+/// SearchBuilder::from_path("/")?
 ///     // search the root tree
 ///     .tree(TreeId::RootTree)
 ///
@@ -684,7 +669,7 @@ mod seal
 ///     .objectid(..=1000)
 ///
 ///     // consume the builder and return a TreeSearch
-///     .new();
+///     .build();
 ///
 /// Ok::<(), std::io::Error>(())
 /// ````

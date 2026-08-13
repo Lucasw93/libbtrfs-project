@@ -1,6 +1,6 @@
 use super::*;
+use crate::ffi::UnixStr;
 use crate::tree_search::tree_item::RootRef;
-use crate::util::KernelStr;
 use crate::util::subvol_info_args_from_root_item;
 use std::ptr::{write, write_bytes};
 
@@ -39,15 +39,9 @@ impl SubvolInfo
     }
 
     /// Name of this subvolume
-    pub fn name_str(&self) -> KernelStr<'_>
+    pub const fn name(&self) -> &UnixStr
     {
-        unsafe { CStr::from_ptr(self.0.name.as_ptr().cast()).to_string_lossy() }
-    }
-
-    /// Name of this subvolume
-    pub const fn name_bytes(&self) -> &[u8]
-    {
-        unsafe { CStr::from_ptr(self.0.name.as_ptr()).to_bytes() }
+        unsafe { UnixStr::from_ptr(self.0.name.as_ptr()) }
     }
 
     /// Id of the subvolume which contains this subvolume
@@ -222,7 +216,7 @@ pub mod io
         let mut info = MaybeUninit::<btrfs_ioctl_get_subvol_info_args>::uninit();
         let mut got_root_item = false;
         let mut got_root_ref = treeid == BTRFS_FS_TREE_OBJECTID;
-        let mut tree_search = SearchBuilder::from(fd.as_fd())
+        let mut tree_search = SearchBuilder::new(fd.as_fd())
             .tree(TreeId::RootTree)
             .item_limit(u32::MAX)
             .objectid(..=treeid)
@@ -235,12 +229,12 @@ pub mod io
                     }
                 },
             )
-            .new();
+            .build();
 
         let info_ptr = info.as_mut_ptr();
 
         while !got_root_item && !got_root_ref {
-            let items = tree_search.search(|_| None)?;
+            let items = tree_search.query(|_| None)?;
 
             if items.len() == 0 {
                 return Err(ErrorKind::NotFound.into());
@@ -254,7 +248,7 @@ pub mod io
                     BTRFS_ROOT_BACKREF_KEY => unsafe {
                         let subv_name: *mut u8 = (&raw mut (*info_ptr).name).cast();
                         let rr = item.get_unchecked::<RootRef>();
-                        let rr_name = rr.name_bytes()?;
+                        let rr_name = rr.name_as_bytes()?;
 
                         rr_name
                             .as_ptr()
