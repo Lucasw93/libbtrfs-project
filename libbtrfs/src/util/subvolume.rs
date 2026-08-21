@@ -11,16 +11,6 @@ use std::{
     ptr::write,
 };
 
-/// Fill the name field for btrfs_ioctl_vol_args_v2 after checking if name is valid
-pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
-{
-    if name.contains(&(SEP as u8)) {
-        Err(ErrorKind::InvalidInput.into())
-    } else {
-        set_vol_name(name, dst)
-    }
-}
-
 pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
     (name.contains(&0) || !copy_bytes_to_c_array!(name, dst))
