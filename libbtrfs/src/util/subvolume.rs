@@ -11,6 +11,7 @@ use std::{
     ptr::write,
 };
 
+/// Fill the name field for btrfs_ioctl_vol_args_v2 or btrfs_ioctl_vol_args.
 pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
     (name.contains(&0) || !copy_bytes_to_c_array!(name, dst))
