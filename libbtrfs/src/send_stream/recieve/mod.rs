@@ -29,6 +29,7 @@ pub fn receive_stream<P: AsRef<Path>, S: Read>(
     dst: P,
     src: S,
     progress: Option<Arc<AtomicU64>>,
+    _: bool
 ) -> IoResult<()>
 {
     if !dst.as_ref().exists() {

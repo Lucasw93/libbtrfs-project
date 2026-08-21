@@ -5,7 +5,7 @@ pub struct Callbacks;
 
 impl Callbacks
 {
-    const HELPER_PREFIX: &str = "RUST_CONST_HELPER";
+    const HELPER_PREFIX: &str = "RUST_CONST_HELPER_";
 }
 
 impl callbacks::ParseCallbacks for Callbacks
@@ -13,8 +13,8 @@ impl callbacks::ParseCallbacks for Callbacks
     fn generated_name_override(&self, item: callbacks::ItemInfo<'_>) -> Option<String>
     {
         item.name
-            .starts_with(Self::HELPER_PREFIX)
-            .then(|| item.name[Self::HELPER_PREFIX.len() + 1..].into())
+            .strip_prefix(Self::HELPER_PREFIX)
+            .map(String::from)
     }
 
     fn item_name(&self, item: callbacks::ItemInfo) -> Option<String>
@@ -30,7 +30,7 @@ impl callbacks::ParseCallbacks for Callbacks
             },
             _ => None,
         }
-        .map(Into::into)
+        .map(String::from)
     }
 
     fn int_macro(&self, name: &str, _value: i64) -> Option<IntKind>

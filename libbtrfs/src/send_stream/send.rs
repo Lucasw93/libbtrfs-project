@@ -1,76 +1,125 @@
 use crate::{
-    Flags,
     bindings::{BTRFS_IOC_SEND, BTRFS_SEND_FLAG_VERSION, btrfs_ioctl_send_args},
     fs::io::is_btrfs,
+    util::IoResult,
     util::btrfs_ioctl,
     util::send::supported_send_version,
-    util::{IoError, IoResult},
 };
 use libc::F_SETPIPE_SZ;
-
-use std::sync::{Arc, atomic::AtomicU64};
-
 use std::{
     fs::File,
     io::{ErrorKind, PipeReader, PipeWriter, pipe, stdout},
     mem::MaybeUninit,
-    os::fd::{AsFd, AsRawFd, OwnedFd},
+    os::fd::{AsFd, AsRawFd},
     path::{Path, PathBuf},
-    thread,
-    thread::JoinHandle,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    thread::{self, JoinHandle},
 };
 
-impl TryFrom<&Path> for SendBuilder
+pub struct SendHandle
 {
-    type Error = IoError;
+    position: Arc<AtomicU64>,
+    send_handle: JoinHandle<IoResult<()>>,
+    recv_handle: Option<JoinHandle<IoResult<()>>>,
+}
 
-    fn try_from(value: &Path) -> Result<Self, Self::Error>
+impl SendHandle
+{
+    pub fn join(self) -> IoResult<()>
     {
-        File::open(value).map(|f| Self::new_internal(f.into()))
+        if let Some(handle) = self.recv_handle {
+            handle.join().unwrap()?;
+        }
+        self.send_handle.join().unwrap()
+    }
+
+    pub fn is_finished(&self) -> bool
+    {
+        self.send_is_finished() && self.receive_is_finished()
+    }
+
+    pub fn receive_is_finished(&self) -> bool
+    {
+        self.recv_handle
+            .as_ref()
+            .is_none_or(JoinHandle::is_finished)
+    }
+
+    pub fn send_is_finished(&self) -> bool
+    {
+        self.send_handle.is_finished()
+    }
+
+    pub fn position(&self) -> u64
+    {
+        self.position.load(Ordering::Relaxed)
     }
 }
 
-impl TryFrom<&str> for SendBuilder
+pub struct SendBuilder<R: AsFd>
 {
-    type Error = IoError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error>
-    {
-        Self::try_from(Path::new(value))
-    }
-}
-
-impl From<File> for SendBuilder
-{
-    fn from(value: File) -> Self
-    {
-        Self::new_internal(value.into())
-    }
-}
-
-pub struct SendBuilder
-{
-    source: OwnedFd,
+    source: R,
     receive: Option<PathBuf>,
+    buffered: bool,
     version: u32,
     send_fd: i64,
-    flags: Flags,
+    flags: u64,
 }
 
-impl SendBuilder
+impl<R: AsFd> From<R> for SendBuilder<R>
+{
+    fn from(source: R) -> Self
+    {
+        Self {
+            source,
+            buffered: false,
+            receive: None,
+            version: supported_send_version(),
+            send_fd: stdout().as_raw_fd() as i64,
+            flags: 0,
+        }
+    }
+}
+
+impl SendBuilder<File>
+{
+    pub fn from_path<P: AsRef<Path>>(path: P) -> IoResult<Self>
+    {
+        Ok(Self::from(File::open(path)?))
+    }
+}
+
+macro_rules! send_flag_to_builder_fn {
+    {
+        $(#[doc = $cmt:literal])+
+        pub fn ($name:ident | $flag:ident) -> Self;
+    } => {
+        $(#[doc = $cmt])+
+        pub fn $name(mut self, $name: bool) -> Self
+        {
+            const FLAG: u64 = $crate::bindings::$flag;
+
+            if $name {
+                self.flags |= FLAG;
+            } else {
+                self.flags &= !FLAG;
+            }
+            self
+        }
+    }
+}
+
+impl<R: AsFd + Send + 'static> SendBuilder<R>
 {
     const BUFSZ_V1: i32 = 64_000;
     const BUFSZ_V2: i32 = 128_000;
 
-    fn new_internal(source: OwnedFd) -> Self
+    pub fn new(source: R) -> Self
     {
-        Self {
-            source,
-            receive: None,
-            version: supported_send_version(),
-            send_fd: stdout().as_raw_fd() as i64,
-            flags: Flags::NONE,
-        }
+        Self::from(source)
     }
 
     pub fn receive<P: AsRef<Path>>(mut self, destination: P) -> Self
@@ -85,13 +134,35 @@ impl SendBuilder
         self
     }
 
-    pub fn flags(mut self, flags: Flags) -> Self
+    pub fn buffered(mut self, buffered: bool) -> Self
     {
-        self.flags = flags;
+        self.buffered = buffered;
         self
     }
 
-    pub fn spawn_send(mut self, progress: Arc<AtomicU64>) -> IoResult<JoinHandle<IoResult<()>>>
+    send_flag_to_builder_fn! {
+        /// File data wont be included in the stream.
+        ///
+        /// Write commands will be replaced with Update Extent commands.
+        pub fn (no_file_data | BTRFS_SEND_FLAG_NO_FILE_DATA) -> Self;
+    }
+
+    send_flag_to_builder_fn! {
+        /// Omit the command at the end of the stream.
+        pub fn (omit_end_cmd | BTRFS_SEND_FLAG_OMIT_END_CMD) -> Self;
+    }
+
+    send_flag_to_builder_fn! {
+        /// Omit the stream header.
+        pub fn (omit_stream_header | BTRFS_SEND_FLAG_OMIT_STREAM_HEADER) -> Self;
+    }
+
+    send_flag_to_builder_fn! {
+        /// Send compressed data.
+        pub fn (compressed | BTRFS_SEND_FLAG_COMPRESSED) -> Self;
+    }
+
+    pub fn spawn_send(mut self) -> IoResult<SendHandle>
     {
         let (reader, writer): (PipeReader, PipeWriter);
 
@@ -116,31 +187,31 @@ impl SendBuilder
             return Err(ErrorKind::Unsupported.into());
         }
 
-        let flag_args = self.flags.to_raw_send_flags()?;
-
         let send_handle = thread::spawn(move || {
             let fd = self.source;
             let mut args: btrfs_ioctl_send_args = unsafe { MaybeUninit::zeroed().assume_init() };
 
-            args.flags = flag_args;
             args.send_fd = self.send_fd;
+            args.flags = self.flags;
             args.version = self.version;
             if args.version > 1 {
                 args.flags |= BTRFS_SEND_FLAG_VERSION
             }
-
             btrfs_ioctl(fd.as_fd(), BTRFS_IOC_SEND, &mut args)
         });
 
-        let _recv_handle = recv_data.map(|(dst, reader, writer)| {
+        let position = Arc::default();
+        let position_clone = Arc::clone(&position);
+
+        let recv_handle = recv_data.map(|(dst, reader, writer)| {
             thread::spawn(move || {
                 let _w = writer; // dont close the pipe
 
-                super::receive_stream(dst, reader, Some(progress))
+                super::receive_stream(dst, reader, Some(position_clone), self.buffered)
             })
         });
 
-        Ok(send_handle)
+        Ok(SendHandle { position, recv_handle, send_handle })
     }
 
     pub fn send(mut self) -> IoResult<()>
@@ -159,20 +230,19 @@ impl SendBuilder
             };
             syscall!(unsafe { fcntl(reader.as_raw_fd(), F_SETPIPE_SZ, pipe_sz) })?;
 
-            thread::spawn(move || super::receive_stream(dst, reader, None)).into()
+            thread::spawn(move || super::receive_stream(dst, reader, None, self.buffered)).into()
         } else {
             None
         };
 
         let mut args: btrfs_ioctl_send_args = unsafe { MaybeUninit::zeroed().assume_init() };
 
-        args.flags = self.flags.to_raw_send_flags()?;
         args.send_fd = self.send_fd;
+        args.flags = self.flags;
         args.version = self.version;
         if args.version > 1 {
             args.flags |= BTRFS_SEND_FLAG_VERSION
         }
-
         let send_result = btrfs_ioctl(self.source.as_fd(), BTRFS_IOC_SEND, &mut args);
 
         if let Err(ref e) = send_result {

@@ -7,7 +7,7 @@ use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::{
     ffi::{c_char, OsStr},
     io::ErrorKind,
-    path::{Component, MAIN_SEPARATOR as SEP, Path},
+    path::{Component, MAIN_SEPARATOR, Path},
     ptr::write,
 };
 
@@ -23,15 +23,9 @@ pub fn set_subvol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> Io
 
 pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
-    if name == Component::CurDir.as_os_str().as_bytes()
-        || name == Component::ParentDir.as_os_str().as_bytes()
-    {
-        Err(ErrorKind::AlreadyExists.into())
-    } else if name.is_empty() || name.contains(&b'\0') || copy_bytes_to_slice!(name, dst) {
-        Err(ErrorKind::InvalidInput.into())
-    } else {
-        Ok(())
-    }
+    (name.contains(&0) || !copy_bytes_to_c_array!(name, dst))
+        .then(|| ErrorKind::InvalidInput.into())
+        .map_or(Ok(()), Err)
 }
 
 #[inline(always)]
@@ -39,11 +33,11 @@ fn parse_parent_and_name(path: &Path) -> (&OsStr, &[u8])
 {
     let mut bytes = path.as_os_str().as_bytes();
 
-    if let Some(p) = bytes.iter().rposition(|b| *b != SEP as u8) {
+    if let Some(p) = bytes.iter().rposition(|b| *b != MAIN_SEPARATOR as u8) {
         bytes = &bytes[..p + 1];
     }
 
-    let (dirname, basename) = match bytes.iter().rposition(|b| *b == SEP as u8) {
+    let (dirname, basename) = match bytes.iter().rposition(|b| *b == MAIN_SEPARATOR as u8) {
         Some(p) => (
             if p == 0 {
                 Component::RootDir.as_os_str()

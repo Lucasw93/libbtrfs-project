@@ -1,10 +1,8 @@
 #![allow(unused_macros)]
 
-macro_rules! copy_bytes_to_slice {
+macro_rules! copy_bytes_to_c_array {
     ($bytes:expr, $dst:expr) => {
-        if $bytes.len() > $dst.len() {
-            true // too long return true
-        } else {
+        if $bytes.len() < $dst.len() {
             let _: &[u8] = $bytes;
             let src: *const u8 = $bytes.as_ptr().cast();
             let dst: *mut u8 = $dst.as_mut_ptr().cast();
@@ -12,7 +10,9 @@ macro_rules! copy_bytes_to_slice {
             unsafe {
                 ::std::ptr::copy_nonoverlapping(src, dst, len);
             }
-            false // success return false
+            true // success return true
+        } else {
+            false // too long return false
         }
     };
 }

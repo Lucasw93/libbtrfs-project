@@ -40,7 +40,7 @@ mod debug
         {
             f.debug_struct("SubvolInfo")
                 .field("treeid", &self.treeid())
-                .field("name", &self.name_str())
+                .field("name", &self.name())
                 .field("parent_id", &self.parent_id())
                 .field("dirid", &self.dirid())
                 .field("generation", &self.generation())

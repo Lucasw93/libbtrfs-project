@@ -1,10 +1,10 @@
 use super::*;
 use crate::{
-    KernelStr,
     bindings::{
         BTRFS_IOC_GET_SUBVOL_ROOTREF, btrfs_ioctl_get_subvol_rootref_args,
         btrfs_ioctl_get_subvol_rootref_args__bindgen_ty_1,
     },
+    ffi::*,
 };
 
 /// Subvolume ID and dirid for a subvolume that references a root subvolume.
@@ -54,8 +54,8 @@ impl SubvolRootRef
 ///     let buf_len = buf.len();
 ///
 ///     get_rootref(path, |rref, lookup, name| {
-///         buf.push_str(&lookup);
-///         buf.push_str(&name);
+///         buf.push_str(&lookup.to_string_lossy());
+///         buf.push_str(&name.to_string_lossy());
 ///
 ///         println!("ID {}: {}", rref.treeid(), buf);
 ///
@@ -69,7 +69,7 @@ impl SubvolRootRef
 pub fn get_rootref<P, F>(subvol: P, f: F) -> IoResult<()>
 where
     P: AsRef<Path>,
-    F: FnMut(SubvolRootRef, KernelStr<'_>, KernelStr<'_>) -> IoResult<()>,
+    F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> IoResult<()>,
 {
     File::open(subvol).and_then(|r| io::get_rootref(r, f))
 }
@@ -82,7 +82,7 @@ pub mod io
     pub fn get_rootref<R, F>(resource: R, mut f: F) -> IoResult<()>
     where
         R: AsFd,
-        F: FnMut(SubvolRootRef, KernelStr<'_>, KernelStr<'_>) -> IoResult<()>,
+        F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> IoResult<()>,
     {
         let mut args: btrfs_ioctl_get_subvol_rootref_args =
             unsafe { MaybeUninit::zeroed().assume_init() };

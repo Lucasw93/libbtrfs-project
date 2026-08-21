@@ -1,5 +1,7 @@
 use super::*;
+use std::{borrow::Cow, ffi::OsStr};
 
+#[derive(Default)]
 pub struct Config
 {
     pub force: bool,
@@ -9,19 +11,22 @@ impl Config
 {
     pub fn parse_cli() -> Self
     {
-        let mut args = env::args();
-        let mut config = Self { force: false };
-        let exec = args.next().unwrap_or_default();
+        let mut config = Self::default();
+        let mut args = argv::iter();
+
+        let exec = args
+            .next()
+            .map_or_else(Default::default, OsStr::to_string_lossy);
 
         while let Some(arg) = args.next() {
-            match arg.as_str() {
+            match arg.to_str().unwrap_or_default() {
                 "--force" | "-f" => config.force = true,
 
                 "--help" => show_help(),
-                arg => invalid_option(arg, &exec),
+
+                _ => invalid_opt(arg.to_string_lossy(), exec),
             }
         }
-
         config
     }
 }
@@ -39,7 +44,7 @@ fn show_help() -> !
     exit(0)
 }
 
-fn invalid_option(arg: &str, exec: &str) -> !
+fn invalid_opt(arg: Cow<str>, exec: Cow<str>) -> !
 {
     eprintln!("{exec}: Invalid option -- '{arg}'");
 

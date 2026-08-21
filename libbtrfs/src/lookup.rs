@@ -4,28 +4,29 @@ use crate::{
         BTRFS_FIRST_FREE_OBJECTID, BTRFS_IOC_INO_LOOKUP, BTRFS_IOC_INO_LOOKUP_USER,
         btrfs_ioctl_ino_lookup_args, btrfs_ioctl_ino_lookup_user_args,
     },
-    util::{IoError, IoResult, KernelStr, OptionFd, btrfs_ioctl},
+    ffi::*,
+    util::{IoError, IoResult, btrfs_ioctl},
 };
 #[allow(unused_imports)]
 use std::io::ErrorKind;
 use std::os::fd::BorrowedFd;
-use std::{ffi::CStr, fs::File, mem::MaybeUninit, os::fd::AsFd, path::Path, ptr};
+use std::{fs::File, mem::MaybeUninit, os::fd::AsFd, path::Path, ptr};
 
 /// Userspace lookup buffer
-pub struct UserLookup<'r>(MaybeUninit<btrfs_ioctl_ino_lookup_user_args>, OptionFd<'r>);
+pub struct UserLookup<R: AsFd>(MaybeUninit<btrfs_ioctl_ino_lookup_user_args>, R);
 
-impl<'r> From<BorrowedFd<'r>> for UserLookup<'r>
+impl<'r> From<BorrowedFd<'r>> for UserLookup<BorrowedFd<'r>>
 {
     /// Initialise a userspace lookup buffer from a raw file descriptor.
     /// The file descriptor will not be closed when `Lookup` instance is dropped
     #[inline(always)]
     fn from(value: BorrowedFd<'r>) -> Self
     {
-        Self(MaybeUninit::uninit(), OptionFd::Borrowed(value))
+        Self(MaybeUninit::uninit(), value)
     }
 }
 
-impl TryFrom<&str> for UserLookup<'_>
+impl TryFrom<&str> for UserLookup<File>
 {
     type Error = IoError;
 
@@ -36,43 +37,19 @@ impl TryFrom<&str> for UserLookup<'_>
     }
 }
 
-impl TryFrom<&Path> for UserLookup<'_>
+impl TryFrom<&Path> for UserLookup<File>
 {
     type Error = IoError;
 
     #[inline(always)]
     fn try_from(value: &Path) -> Result<Self, Self::Error>
     {
-        File::open(value).map(|f| Self(MaybeUninit::uninit(), OptionFd::Owned(f.into())))
+        File::open(value).map(|f| Self(MaybeUninit::uninit(), f))
     }
 }
 
-impl UserLookup<'_>
+impl<R: AsFd> UserLookup<R>
 {
-    /// Lookup the path from a subvolume root
-    ///
-    /// This function is equivelent to `UserLookup::path_as_str()` execept returns bytes
-    /// instead of a `&str`.
-    pub fn path_bytes(&mut self, dirid: u64, treeid: u64) -> IoResult<(&[u8], &[u8])>
-    {
-        unsafe {
-            let arg_ptr = self.0.as_mut_ptr();
-            let path_ptr = &raw mut (*arg_ptr).path;
-            let name_ptr = &raw mut (*arg_ptr).name;
-
-            ptr::write(&raw mut (*arg_ptr).dirid, dirid);
-            ptr::write(&raw mut (*arg_ptr).treeid, treeid);
-            ptr::write_bytes(name_ptr, 0, 1);
-            ptr::write_bytes(path_ptr, 0, 1);
-            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP_USER, arg_ptr)?;
-
-            Ok((
-                CStr::from_ptr(path_ptr.cast()).to_bytes(),
-                CStr::from_ptr(name_ptr.cast()).to_bytes(),
-            ))
-        }
-    }
-
     /// Lookup the path from a subvolume root
     ///
     /// Returns a lookup path and name for the subvolume referenced by `treeid`. `dirid` is the inode
@@ -90,43 +67,42 @@ impl UserLookup<'_>
     /// [`ErrorKind::InvalidInput`]
     ///
     /// > `dirid` is not the directory in which the subvolume, `treeid` is rooted.
-    pub fn path_str(&mut self, dirid: u64, treeid: u64)
-    -> IoResult<(KernelStr<'_>, KernelStr<'_>)>
+    pub fn path_str(&mut self, dirid: u64, treeid: u64) -> IoResult<(&UnixPath, &UnixStr)>
     {
         unsafe {
-            let arg_ptr = self.0.as_mut_ptr();
-            let path_ptr = &raw mut (*arg_ptr).path;
-            let name_ptr = &raw mut (*arg_ptr).name;
+            let args = self.0.as_mut_ptr();
+            let path = &raw mut (*args).path;
+            let name = &raw mut (*args).name;
 
-            ptr::write(&raw mut (*arg_ptr).dirid, dirid);
-            ptr::write(&raw mut (*arg_ptr).treeid, treeid);
-            ptr::write_bytes(name_ptr, 0, 1);
-            ptr::write_bytes(path_ptr, 0, 1);
-            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP_USER, arg_ptr)?;
-
-            Ok((
-                CStr::from_ptr(path_ptr.cast()).to_string_lossy(),
-                CStr::from_ptr(name_ptr.cast()).to_string_lossy(),
-            ))
+            ptr::write(&raw mut (*args).dirid, dirid);
+            ptr::write(&raw mut (*args).treeid, treeid);
+            ptr::write_bytes(name, 0, 1);
+            ptr::write_bytes(path, 0, 1);
+            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP_USER, args).map(|_| {
+                (
+                    UnixPath::from_ptr(path.cast()),
+                    UnixStr::from_ptr(name.cast()),
+                )
+            })
         }
     }
 }
 
 /// Lookup buffer
-pub struct Lookup<'r>(MaybeUninit<btrfs_ioctl_ino_lookup_args>, OptionFd<'r>);
+pub struct Lookup<R: AsFd>(MaybeUninit<btrfs_ioctl_ino_lookup_args>, R);
 
-impl<'r> From<BorrowedFd<'r>> for Lookup<'r>
+impl<'r> From<BorrowedFd<'r>> for Lookup<BorrowedFd<'r>>
 {
     /// Initialise a lookup buffer from a raw file descriptor. The file descriptor will
     /// not be closed when `Lookup` instance is dropped
     #[inline(always)]
     fn from(value: BorrowedFd<'r>) -> Self
     {
-        Self(MaybeUninit::uninit(), OptionFd::Borrowed(value))
+        Self(MaybeUninit::uninit(), value)
     }
 }
 
-impl TryFrom<&str> for Lookup<'_>
+impl TryFrom<&str> for Lookup<File>
 {
     type Error = IoError;
 
@@ -137,18 +113,18 @@ impl TryFrom<&str> for Lookup<'_>
     }
 }
 
-impl TryFrom<&Path> for Lookup<'_>
+impl TryFrom<&Path> for Lookup<File>
 {
     type Error = IoError;
 
     #[inline(always)]
     fn try_from(value: &Path) -> Result<Self, Self::Error>
     {
-        File::open(value).map(|f| Self(MaybeUninit::uninit(), OptionFd::Owned(f.into())))
+        File::open(value).map(|f| Self(MaybeUninit::uninit(), f))
     }
 }
 
-impl Lookup<'_>
+impl<R: AsFd> Lookup<R>
 {
     /// Lookup the treeid for the subvolume referenced by the underlying path or file descriptor.
     pub fn treeid(&mut self) -> IoResult<u64>
@@ -179,7 +155,7 @@ impl Lookup<'_>
     /// # Notes
     ///
     /// **Requires CAP_SYS_ADMIN capabilities**
-    pub fn path_str(&mut self, objectid: u64, treeid: u64) -> IoResult<KernelStr<'_>>
+    pub fn path_str(&mut self, objectid: u64, treeid: u64) -> IoResult<&UnixPath>
     {
         unsafe {
             let args = self.0.as_mut_ptr();
@@ -188,34 +164,8 @@ impl Lookup<'_>
             ptr::write(&raw mut (*args).objectid, objectid);
             ptr::write(&raw mut (*args).treeid, treeid);
             ptr::write_bytes(name, 0, 1);
-            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP, args)?;
-
-            Ok(CStr::from_ptr(name.cast()).to_string_lossy())
-        }
-    }
-
-    /// Lookup path from an inode to a subvolume root
-    ///
-    /// This function retrurns a lookup path as a byte slice to `objectid` which is the inode of a
-    /// file or directory which must be containded in the subvolume referenced by `treeid`. The returned
-    /// path is relative to the subvolume referenced by `treeid`. `objectid` and `treeid` must both be
-    /// within the btrfs filesystem referenced by `fs`.
-    ///
-    /// # Notes
-    ///
-    /// **Requires CAP_SYS_ADMIN capabilities**
-    pub fn path_bytes(&mut self, objectid: u64, treeid: u64) -> IoResult<&[u8]>
-    {
-        unsafe {
-            let args = self.0.as_mut_ptr();
-            let name = &raw mut (*args).name;
-
-            ptr::write(&raw mut (*args).objectid, objectid);
-            ptr::write(&raw mut (*args).treeid, treeid);
-            ptr::write_bytes(name, 0, 1);
-            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP, args)?;
-
-            Ok(CStr::from_ptr(name.cast()).to_bytes())
+            btrfs_ioctl(self.1.as_fd(), BTRFS_IOC_INO_LOOKUP, args)
+                .map(|_| UnixPath::from_ptr(name.cast()))
         }
     }
 }

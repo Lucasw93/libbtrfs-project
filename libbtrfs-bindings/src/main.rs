@@ -144,7 +144,7 @@ fn main() -> reqwest::Result<()>
         create_dir(&upai_dir).unwrap();
     }
 
-    write_btrfs_header(upai_dir, &version, &client).unwrap();
+    write_btrfs_header(upai_dir, &version, &client)?;
 
     genenerate(TARGET_X84_64, &manifest_dir, &version);
     genenerate(TARGET_I686, &manifest_dir, &version);

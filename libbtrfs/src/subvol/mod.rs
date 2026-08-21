@@ -2,6 +2,7 @@
 //!
 //! Basic management of subvolumes in a btrfs filesystem.
 use crate::{
+    Flags,
     bindings::{
         BTRFS_DIR_ITEM_KEY, BTRFS_FIRST_FREE_OBJECTID, BTRFS_IOC_DEFAULT_SUBVOL,
         BTRFS_IOC_GET_SUBVOL_INFO, BTRFS_IOC_SNAP_CREATE_V2, BTRFS_IOC_SNAP_DESTROY_V2,
@@ -11,30 +12,27 @@ use crate::{
     },
     fs, lookup,
     tree_search::tree_item::{DirItem, RootBackref, TreeItem, TreeItemName},
-    tree_search::{SearchBuilder, SearchKeyBuilder, TreeId},
-    util::{IoResult, btrfs_ioctl, open_parent_with_name, set_subvol_name},
+    tree_search::{self, Query, SearchBuilder, SearchKeyBuilder, TreeId},
+    util::{IoError, IoResult, btrfs_ioctl, open_parent_with_name, set_vol_name},
 };
 use std::{
-    ffi::{CStr, OsString},
+    ffi::OsString,
     fs::File,
     io::ErrorKind,
     mem::MaybeUninit,
     os::fd::AsFd,
     os::unix::{fs::MetadataExt, io::AsRawFd},
-    path::Path,
+    path::{MAIN_SEPARATOR, Path},
 };
 use uuid::Uuid;
 
-// To be removed. See note.
-mod iter;
-#[doc(hidden)]
-pub use iter::{Iter, IterUser, SubvolEntry, walk, walk_user};
-
-mod rootref;
-pub use rootref::{SubvolRootRef, get_rootref};
-
 mod info;
+mod iterator;
+mod rootref;
+
 pub use info::{SubvolInfo, Timespec, get_boxed_info, get_info, get_info_by_id};
+pub use iterator::{SubvolItem, iter};
+pub use rootref::{SubvolRootRef, get_rootref};
 
 /// Btrfs subvolume snapshots
 pub mod snap
@@ -110,13 +108,13 @@ pub mod snap
             }
             vol_args.fd = snapvol.as_fd().as_raw_fd() as i64;
 
-            set_subvol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
+            set_vol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
                 .and_then(|_| btrfs_ioctl(dir, BTRFS_IOC_SNAP_CREATE_V2, &mut vol_args))
         }
     }
 }
 
-/// Check if a path represents a btrfs subvolume
+/// Check if a path represents a btrfs subvolume.
 ///
 /// This function returns `Ok(true)` if `subvol` can be determined to represent a btrfs subvolume.
 pub fn is_subvol<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
@@ -130,7 +128,7 @@ pub fn is_subvol<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
         .map(|m| m.is_dir() && m.ino() == BTRFS_FIRST_FREE_OBJECTID)
 }
 
-/// Create a btrfs subvolume
+/// Create a btrfs subvolume.
 ///
 /// This function attempts to create a btrfs subvolume named `pathname`.
 ///
@@ -155,7 +153,7 @@ pub fn create<P: AsRef<Path>>(pathname: P) -> IoResult<()>
     open_parent_with_name(pathname.as_ref()).and_then(|(dir, name)| io::create(dir, name))
 }
 
-/// Remove a btrfs subvolume
+/// Remove a btrfs subvolume.
 ///
 /// This function attempts to remove a btrfs subvolume referenced by `subvol`. The subvolume cannot
 /// contain nested subvolumes, however it can contains regular files and directory's which will be
@@ -188,7 +186,46 @@ pub fn destroy<P: AsRef<Path>>(subvol: P) -> IoResult<()>
     open_parent_with_name(subvol.as_ref()).and_then(|(dir, name)| io::destroy(dir, name))
 }
 
-/// Remove a btrfs subvolume by its subvolume id
+/// Remove a btrfs subvolume after removing all nested subvolumes.
+///
+/// This function is the recursive variant of the [`destroy()`] function. This function is a best
+/// effort approach and does not return when an error is encountered. Instead the `on_error`
+/// closure can be used by callers to handle any errors that were encountered.
+///
+/// The `on_error` closure accepts two arguments, the first is an optional &[`Path`] argument,
+/// which is `Some` when the actual call to [`destroy()`] failed. It is `None` when subvolume
+/// traversal failed and a subvolume could not be accessed. The second argument is the actual
+/// [`io::Error`] itself.
+///
+/// This function returns `Ok` if `subvol` was successfully destroyed, otherwise the [`io::Error`]
+/// represents the error encountered when attemping to destroy `subvol`.
+///
+/// # Errors
+///
+/// See [`destroy()`]
+///
+/// # Notes
+///
+/// <div class="warning">
+///
+/// Use with caution, this function is very distructive!
+///
+/// </div>
+///
+/// **Requires CAP_SYS_ADMIN capabilities — (*unless the filesystem is mounted with
+/// user_subvol_rm_allowed*)**
+///
+/// [`io::Error`]: std::io::Error
+pub fn destroy_all<F: Fn(Option<&Path>, IoError), P: AsRef<Path>>(
+    subvol: P,
+    on_error: F,
+) -> IoResult<()>
+{
+    open_parent_with_name(subvol.as_ref())
+        .and_then(|(dir, name)| io::destroy_all(dir, name, on_error))
+}
+
+/// Remove a btrfs subvolume by its subvolume id.
 ///
 /// This function attempts to remove a btrfs subvolume by its subvolume id in a btrfs filesystem
 /// referenced by `fs`. The subvolume cannot contain nested subvolumes, however it can contains
@@ -213,7 +250,7 @@ pub fn destroy_by_id<P: AsRef<Path>>(subvolid: u64, fs: P) -> IoResult<()>
     File::open(fs.as_ref()).and_then(|f| io::destroy_by_id(subvolid, f))
 }
 
-/// Gets the full subvolume path to the filesystem root
+/// Gets the full subvolume path to the filesystem root.
 ///
 /// This function returns The full path to the filesystem root for the subvolume with id of
 /// `treeid` in the btrfs filesystem referend by `fs`. This path is not relative to a btrfs mount
@@ -227,7 +264,7 @@ pub fn get_path<P: AsRef<Path>>(treeid: u64, fs: P) -> IoResult<OsString>
     File::open(fs.as_ref()).and_then(|f| io::get_path(treeid, f))
 }
 
-/// Gets the default subvolume for the filesystem
+/// Gets the default subvolume for the filesystem.
 ///
 /// # Notes
 ///
@@ -237,7 +274,7 @@ pub fn get_default<P: AsRef<Path>>(fs: P) -> IoResult<u64>
     File::open(fs.as_ref()).and_then(io::get_default)
 }
 
-/// Sets the default subvolume for a btrfs filesystem
+/// Sets the default subvolume for a btrfs filesystem.
 ///
 /// # Errors
 ///
@@ -253,7 +290,7 @@ pub fn set_default<P: AsRef<Path>>(id: u64, fs: P) -> IoResult<()>
     File::open(fs.as_ref()).and_then(|f| io::set_default(id, f))
 }
 
-/// Gets the read-only status for a subvolume
+/// Gets the read-only status for a subvolume.
 ///
 /// # Errors
 ///
@@ -274,19 +311,7 @@ pub fn is_readonly<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
     File::open(subvol.as_ref()).and_then(io::is_readonly)
 }
 
-/// Sets the readonly flag for a subvolume
-///
-/// <div class="warning">
-///
-/// Please note that setting the readonly status of the subvolume that currently contains the
-/// rust project using libbtrfs may cause problems because you will no longer be able to edit the
-/// rust project to change the readonly status back. Btrfs-progs does not contain a command to
-/// change readonly status.
-///
-/// One way to solve this is to copying the project to another subvolume that is read/write then
-/// set the read-only status by calling [`set_readonly`].
-///
-/// </div>
+/// Sets the readonly flag for a subvolume.
 ///
 /// # Errors
 ///
@@ -314,15 +339,9 @@ pub mod io
     use std::mem::{ManuallyDrop, MaybeUninit};
     use std::os::{fd::FromRawFd, unix::ffi::OsStringExt};
 
-    // To be removed. See note.
-    #[doc(hidden)]
-    pub use iter::io::{walk, walk_user};
-
-    pub use super::SubvolRootRef;
-    pub use rootref::io::get_rootref;
-
-    pub use super::SubvolInfo;
     pub use info::io::{get_boxed_info, get_info, get_info_by_id};
+    pub use iterator::io::iter;
+    pub use rootref::io::get_rootref;
 
     /// See [super::is_subvol()]
     pub fn is_subvol<R: AsFd>(fs: R) -> IoResult<bool>
@@ -330,9 +349,8 @@ pub mod io
         if !fs::io::is_btrfs(fs.as_fd())? {
             return Ok(false);
         }
-        let f = unsafe { ManuallyDrop::new(File::from_raw_fd(fs.as_fd().as_raw_fd())) };
-
-        f.metadata()
+        ManuallyDrop::new(unsafe { File::from_raw_fd(fs.as_fd().as_raw_fd()) })
+            .metadata()
             .map(|m| m.is_dir() && m.ino() == BTRFS_FIRST_FREE_OBJECTID)
     }
 
@@ -341,7 +359,7 @@ pub mod io
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 
-        set_subvol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
+        set_vol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
             .and_then(|_| btrfs_ioctl(dir.as_fd(), BTRFS_IOC_SUBVOL_CREATE_V2, &mut vol_args))
     }
 
@@ -350,8 +368,58 @@ pub mod io
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 
-        set_subvol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
+        set_vol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
             .and_then(|_| btrfs_ioctl(dir.as_fd(), BTRFS_IOC_SNAP_DESTROY_V2, &mut vol_args))
+    }
+
+    /// See [super::destroy_all()]
+    pub fn destroy_all<F, R, N>(dir: R, name: N, on_error: F) -> IoResult<()>
+    where
+        F: Fn(Option<&Path>, IoError),
+        R: AsFd,
+        N: AsRef<[u8]>,
+    {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        const INIT_BUF_SZ: usize = 1024;
+
+        if name.as_ref().contains(&0) {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+        let mut base_subvol = Vec::with_capacity(INIT_BUF_SZ);
+
+        base_subvol.extend_from_slice(name.as_ref());
+        base_subvol.push(0);
+
+        let base_len = base_subvol.len();
+        let base_fd = unsafe {
+            syscall!(openat(
+                dir.as_fd().as_raw_fd(),
+                base_subvol.as_ptr().cast(),
+                libc::O_RDONLY | libc::O_DIRECTORY,
+            ))
+            .map(|f| File::from_raw_fd(f))?
+        };
+        base_subvol[base_len - 1] = MAIN_SEPARATOR as u8;
+
+        if !is_subvol(base_fd.as_fd())? {
+            return Err(ErrorKind::Unsupported.into());
+        }
+        for subvol in iter(base_fd.as_fd(), Flags::POST_ORDER | Flags::GET_PATH)? {
+            match subvol {
+                Err(e) => on_error(None, e),
+                Ok(vol) => {
+                    base_subvol.truncate(base_len);
+                    base_subvol.extend_from_slice(vol.path().to_bytes());
+
+                    let path = Path::new(OsStr::from_bytes(&base_subvol));
+                    let _ = super::destroy(path).map_err(|e| on_error(Some(path), e));
+                }
+            }
+        }
+
+        destroy(dir, name)
     }
 
     /// See [super::destroy_by_id()]
@@ -368,23 +436,24 @@ pub mod io
     /// See [super::get_default()]
     pub fn get_default<R: AsFd>(resource: R) -> IoResult<u64>
     {
-        let mut search = SearchBuilder::from(resource.as_fd())
+        let mut search = SearchBuilder::new(resource)
             .tree(TreeId::RootTree)
-            .item_limit(u32::MAX)
             .objectid(..=BTRFS_ROOT_TREE_DIR_OBJECTID)
             .item_type(..=BTRFS_DIR_ITEM_KEY)
-            .new();
+            .build();
 
         loop {
-            let items = search.search(|k| (k.0, k.1, k.2 + 1))?;
+            let items = search.query(|k| (k.0, k.1, k.2 + 1))?;
 
             if items.len() == 0 {
                 return Err(ErrorKind::NotFound.into());
-            } else if let Some(di) = items
-                .filter_map(|item| item.get::<DirItem>())
-                .find(|di| di.name_bytes().unwrap_or_default() == b"default")
+            }
+
+            if let Some(dir_item) = items
+                .filter_map(tree_search::SearchItem::get::<DirItem>)
+                .find(|dir_item| dir_item.name_as_bytes().ok() == Some(b"default"))
             {
-                return Ok(di.location().objectid());
+                return Ok(dir_item.location().objectid());
             }
         }
     }
@@ -396,28 +465,27 @@ pub mod io
     }
 
     /// See [super::is_readonly()]
-    pub fn is_readonly<R: AsFd>(fs: R) -> IoResult<bool>
+    pub fn is_readonly<R: AsFd>(subvol: R) -> IoResult<bool>
     {
         let mut flags: u64 = 0;
 
-        btrfs_ioctl(fs.as_fd(), BTRFS_IOC_SUBVOL_GETFLAGS, &mut flags)
+        btrfs_ioctl(subvol.as_fd(), BTRFS_IOC_SUBVOL_GETFLAGS, &mut flags)
             .map(|_| flags & BTRFS_SUBVOL_RDONLY != 0)
     }
 
     /// See [super::set_readonly()]
-    pub fn set_readonly<R: AsFd>(fs: R, readonly: bool) -> IoResult<()>
+    pub fn set_readonly<R: AsFd>(subvol: R, readonly: bool) -> IoResult<()>
     {
         let mut flags: u64 = 0;
 
-        btrfs_ioctl(fs.as_fd(), BTRFS_IOC_SUBVOL_GETFLAGS, &mut flags)?;
-
-        if BTRFS_SUBVOL_RDONLY & flags != BTRFS_SUBVOL_RDONLY * readonly as u64 {
+        btrfs_ioctl(subvol.as_fd(), BTRFS_IOC_SUBVOL_GETFLAGS, &mut flags).and_then(|_| {
+            if (BTRFS_SUBVOL_RDONLY & flags) == (BTRFS_SUBVOL_RDONLY * readonly as u64) {
+                return Ok(()); // subvolume already set to requested `readonly` status
+            }
             flags ^= BTRFS_SUBVOL_RDONLY;
 
-            btrfs_ioctl(fs.as_fd(), BTRFS_IOC_SUBVOL_SETFLAGS, &mut flags)?;
-        }
-
-        Ok(())
+            btrfs_ioctl(subvol.as_fd(), BTRFS_IOC_SUBVOL_SETFLAGS, &mut flags)
+        })
     }
 
     /// See [super::get_path()]
@@ -429,16 +497,16 @@ pub mod io
             buf.set_len(pos);
         }
         let mut lookup_buf = lookup::Lookup::from(fs.as_fd());
-        let mut tree_search = SearchBuilder::from(fs.as_fd())
+        let mut tree_search = SearchBuilder::new(fs.as_fd())
             .tree(TreeId::RootTree)
             .item_limit(1)
             .objectid(..=treeid)
             .item_type(..=RootBackref::KEY)
-            .new();
+            .build();
 
         loop {
             let item = match tree_search
-                .search(|(.., off)| (off, RootBackref::KEY, 0))?
+                .query(|(.., off)| (off, RootBackref::KEY, 0))?
                 .next()
             {
                 None => return Err(ErrorKind::NotFound.into()),
@@ -446,8 +514,11 @@ pub mod io
             };
             let rootvol = item.offset() == TreeId::FsTree;
             let backref = unsafe { item.get_unchecked::<RootBackref>() };
-            let name = backref.name_bytes()?;
-            let lookup = lookup_buf.path_bytes(backref.dirid(), item.offset())?;
+            let name = backref.name_as_bytes()?;
+            let lookup = lookup_buf
+                .path_str(backref.dirid(), item.offset())?
+                .to_bytes();
+
             let total_len = lookup.len() + name.len();
 
             while total_len + !rootvol as usize > pos {
