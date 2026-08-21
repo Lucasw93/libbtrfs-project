@@ -5,14 +5,14 @@ use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
 use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::{
-    ffi::OsStr,
+    ffi::{c_char, OsStr},
     io::ErrorKind,
     path::{Component, MAIN_SEPARATOR, Path},
     ptr::write,
 };
 
 /// Fill the name field for btrfs_ioctl_vol_args_v2 or btrfs_ioctl_vol_args.
-pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [i8; N]) -> IoResult<()>
+pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
 {
     (name.contains(&0) || !copy_bytes_to_c_array!(name, dst))
         .then(|| ErrorKind::InvalidInput.into())
