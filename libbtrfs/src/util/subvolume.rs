@@ -5,7 +5,7 @@ use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
 use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
 use std::{
-    ffi::{c_char, OsStr},
+    ffi::{OsStr, c_char},
     io::ErrorKind,
     path::{Component, MAIN_SEPARATOR, Path},
     ptr::write,
