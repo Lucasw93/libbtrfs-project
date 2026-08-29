@@ -69,8 +69,8 @@ pub type DiskKey = (ObjectId, Ty, Offset);
 
 /// Set the search key from the last seen [`DiskKey`]
 ///
-/// Return value for the closure called when the [`TreeSearch::search()`] iterator goes out of
-/// scope. Sets the search key used for future calls to [`TreeSearch::search()`] based on the last
+/// Return value for the closure called when the [`TreeSearch::query()`] iterator goes out of
+/// scope. Sets the search key used for future calls to [`TreeSearch::query()`] based on the last
 /// seen [`DiskKey`].
 pub trait FromDiskKey
 {
@@ -317,9 +317,11 @@ impl<'buf> SearchItem<'buf>
     }
 }
 
-/// Provides the [`Self::search()`] method.
+/// Can perform tree searches using a fixed size buffer.
 ///
-/// This struct is returned by the [`SearchBuilder::new()`] method.
+/// This struct is capable of performing tree searches via the [`Query`] trait.
+///
+/// This struct is returned by the [`SearchBuilder::build()`] method.
 ///
 /// See the [`SearchKeyBuilder`] trait for updating the search key.
 pub struct TreeSearch<R: AsFd>
@@ -333,9 +335,10 @@ impl<'a, R: AsFd> seal::SearchKeyBuilderExt for &'a mut TreeSearch<R>
     #[inline(always)]
     fn get_key(&mut self) -> &mut self::btrfs_ioctl_search_key
     {
-        unsafe { &mut (*self.args.as_mut_ptr()).key }
+        unsafe { &mut *(&raw mut (*self.args.as_mut_ptr()).key) }
     }
 }
+
 impl<'a, R: AsFd> SearchKeyBuilder for &'a mut TreeSearch<R> {}
 
 impl<R: AsFd> Query for TreeSearch<R>
@@ -350,7 +353,7 @@ impl<R: AsFd> Query for TreeSearch<R>
     {
         let fd = self.resource.as_fd();
         let args = self.args.as_mut_ptr();
-        let key = unsafe { &mut (*args).key };
+        let key = unsafe { &mut *(&raw mut (*args).key) };
         let nr_items_in = key.nr_items;
 
         btrfs_ioctl(fd, BTRFS_IOC_TREE_SEARCH, args)?;
@@ -369,13 +372,15 @@ impl<R: AsFd> Query for TreeSearch<R>
     }
 }
 
-/// Provides the [`Self::search()`] method.
+/// Can perform tree searches using a variable size buffer.
 ///
-/// This struct is returned by the [`SearchBuilder::new_boxed()`] method.
+/// This struct is capable of performing tree searches via the [`Query`] trait.
+///
+/// This struct is returned by the [`SearchBuilder::build_boxed()`] method.
 ///
 /// This struct is equivelent to the [`TreeSearch`] struct, except that the search buffer is
 /// allocated on the heap. The buffer size is determied by the argument given to the
-/// [`SearchBuilder::new_boxed()`] method.
+/// [`SearchBuilder::build_boxed()`] method.
 ///
 /// See the [`SearchKeyBuilder`] trait for updating the search key.
 pub struct BoxedTreeSearch<R: AsFd>
@@ -389,7 +394,7 @@ impl<'a, R: AsFd> seal::SearchKeyBuilderExt for &'a mut BoxedTreeSearch<R>
     #[inline(always)]
     fn get_key(&mut self) -> &mut self::btrfs_ioctl_search_key
     {
-        unsafe { &mut (*self.args).key }
+        unsafe { &mut *(&raw mut (*self.args).key) }
     }
 }
 
@@ -421,7 +426,7 @@ impl<R: AsFd> Query for BoxedTreeSearch<R>
     {
         let fd = self.resource.as_fd();
         let args = self.args;
-        let key = unsafe { &mut (*args).key };
+        let key = unsafe { &mut *(&raw mut (*args).key) };
         let nr_items_in = key.nr_items;
 
         btrfs_ioctl(fd, BTRFS_IOC_TREE_SEARCH_V2, args)?;
