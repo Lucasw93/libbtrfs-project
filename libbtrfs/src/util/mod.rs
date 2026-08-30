@@ -6,6 +6,7 @@ pub(crate) type IoResult<T> = std::result::Result<T, IoError>;
 mod subvolume;
 pub(crate) use subvolume::*;
 
+#[cfg(feature = "send-stream")]
 pub(crate) mod send;
 
 /// Ioctl wrapper function for the btrfs filesystem

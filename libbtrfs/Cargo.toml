@@ -17,9 +17,9 @@ repository.workspace = true
 [lib]
 
 [features]
-default = []
+default = ["send-stream"]
 debug = []
-unstable = ["dep:crc32c", "dep:rtrb"]
+send-stream = ["dep:crc32c", "dep:rtrb"]
 use-syscalls = ["dep:syscalls"]
 use-crc-fast = ['dep:crc-fast']
 

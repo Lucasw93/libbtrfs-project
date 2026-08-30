@@ -8,7 +8,7 @@ mod flag_options;
 mod impls;
 mod util;
 
-#[cfg(feature = "unstable")]
+#[cfg(feature = "send-stream")]
 pub mod send_stream;
 
 pub mod dev;

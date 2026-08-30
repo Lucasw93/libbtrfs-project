@@ -1,3 +1,4 @@
+use super::handler::StreamHandler;
 use crate::{
     bindings::{BTRFS_IOC_SEND, BTRFS_SEND_FLAG_VERSION, btrfs_ioctl_send_args},
     fs::io::is_btrfs,
@@ -10,8 +11,8 @@ use std::{
     fs::File,
     io::{ErrorKind, PipeReader, PipeWriter, pipe, stdout},
     mem::MaybeUninit,
-    os::fd::{AsFd, AsRawFd},
-    path::{Path, PathBuf},
+    os::fd::{AsFd, AsRawFd, OwnedFd},
+    path::Path,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -19,6 +20,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+/// Joinable handle returned by [`SendBuilder::spawn_send()`].
 pub struct SendHandle
 {
     position: Arc<AtomicU64>,
@@ -28,6 +30,7 @@ pub struct SendHandle
 
 impl SendHandle
 {
+    /// Joins both the sending and receiving threads.
     pub fn join(self) -> IoResult<()>
     {
         if let Some(handle) = self.recv_handle {
@@ -36,11 +39,13 @@ impl SendHandle
         self.send_handle.join().unwrap()
     }
 
+    /// Check if the both the sending and receiving threads have finishd.
     pub fn is_finished(&self) -> bool
     {
         self.send_is_finished() && self.receive_is_finished()
     }
 
+    /// Check if the receiving thread is finished.
     pub fn receive_is_finished(&self) -> bool
     {
         self.recv_handle
@@ -48,47 +53,51 @@ impl SendHandle
             .is_none_or(JoinHandle::is_finished)
     }
 
+    /// Check if the sending thread is finished.
     pub fn send_is_finished(&self) -> bool
     {
         self.send_handle.is_finished()
     }
 
+    /// Load the current position of the send stream.
     pub fn position(&self) -> u64
     {
         self.position.load(Ordering::Relaxed)
     }
 }
 
-pub struct SendBuilder<R: AsFd>
+/// Builds a send stream.
+pub struct SendBuilder<R: AsFd, H>
 {
     source: R,
-    receive: Option<PathBuf>,
     buffered: bool,
     version: u32,
     send_fd: i64,
     flags: u64,
+    handler: Option<H>,
 }
 
-impl<R: AsFd> From<R> for SendBuilder<R>
+impl<R: AsFd, H> From<R> for SendBuilder<R, H>
 {
     fn from(source: R) -> Self
     {
         Self {
             source,
             buffered: false,
-            receive: None,
             version: supported_send_version(),
             send_fd: stdout().as_raw_fd() as i64,
             flags: 0,
+            handler: None,
         }
     }
 }
 
-impl SendBuilder<File>
+impl<H> SendBuilder<OwnedFd, H>
 {
+    /// Construes a new builder from a given path.
     pub fn from_path<P: AsRef<Path>>(path: P) -> IoResult<Self>
     {
-        Ok(Self::from(File::open(path)?))
+        Ok(Self::from(OwnedFd::from(File::open(path)?)))
     }
 }
 
@@ -112,28 +121,41 @@ macro_rules! send_flag_to_builder_fn {
     }
 }
 
-impl<R: AsFd + Send + 'static> SendBuilder<R>
+impl<R, H> SendBuilder<R, H>
+where
+    H: StreamHandler + Send + 'static,
+    R: AsFd + Send + 'static,
 {
     const BUFSZ_V1: i32 = 64_000;
     const BUFSZ_V2: i32 = 128_000;
 
+    /// Construes a new builder.
     pub fn new(source: R) -> Self
     {
         Self::from(source)
     }
 
-    pub fn receive<P: AsRef<Path>>(mut self, destination: P) -> Self
-    {
-        self.receive = Some(destination.as_ref().to_path_buf());
-        self
-    }
-
+    /// Set the send stream version.
+    ///
+    /// By default the highest supported version if used.
     pub fn version(mut self, version: u32) -> Self
     {
         self.version = version;
         self
     }
 
+    /// Use the given `handler` to receive the stream.
+    pub fn handler(mut self, handler: H) -> Self
+    {
+        self.handler = Some(handler);
+        self
+    }
+
+    /// Wether or not to use a buffered receive.
+    ///
+    /// This options has no effect if no handler is provided.
+    ///
+    /// See, [super::receive_stream()] for more information.
     pub fn buffered(mut self, buffered: bool) -> Self
     {
         self.buffered = buffered;
@@ -162,11 +184,12 @@ impl<R: AsFd + Send + 'static> SendBuilder<R>
         pub fn (compressed | BTRFS_SEND_FLAG_COMPRESSED) -> Self;
     }
 
+    /// Consumes the builder and spawns a non blocking send.
     pub fn spawn_send(mut self) -> IoResult<SendHandle>
     {
         let (reader, writer): (PipeReader, PipeWriter);
 
-        let recv_data = if let Some(dst) = self.receive {
+        let recv_data = if let Some(handler) = self.handler {
             (reader, writer) = pipe()?;
 
             self.send_fd = writer.as_raw_fd() as i64;
@@ -178,7 +201,7 @@ impl<R: AsFd + Send + 'static> SendBuilder<R>
             };
             syscall!(unsafe { fcntl(reader.as_raw_fd(), F_SETPIPE_SZ, pipe_sz) })?;
 
-            Some((dst, reader, writer))
+            Some((handler, reader, writer))
         } else {
             None
         };
@@ -203,22 +226,23 @@ impl<R: AsFd + Send + 'static> SendBuilder<R>
         let position = Arc::default();
         let position_clone = Arc::clone(&position);
 
-        let recv_handle = recv_data.map(|(dst, reader, writer)| {
+        let recv_handle = recv_data.map(|(handler, reader, writer)| {
             thread::spawn(move || {
                 let _w = writer; // dont close the pipe
 
-                super::receive_stream(dst, reader, Some(position_clone), self.buffered)
+                super::receive_stream(handler, reader, Some(position_clone), self.buffered)
             })
         });
 
         Ok(SendHandle { position, recv_handle, send_handle })
     }
 
-    pub fn send(mut self) -> IoResult<()>
+    /// Consumes the builder and performs a blocking send.
+    pub fn blocking_send(mut self) -> IoResult<()>
     {
         let (reader, writer): (PipeReader, PipeWriter);
 
-        let recv_handle = if let Some(dst) = self.receive {
+        let recv_handle = if let Some(handler) = self.handler {
             (reader, writer) = pipe()?;
 
             self.send_fd = writer.as_raw_fd() as i64;
@@ -230,7 +254,9 @@ impl<R: AsFd + Send + 'static> SendBuilder<R>
             };
             syscall!(unsafe { fcntl(reader.as_raw_fd(), F_SETPIPE_SZ, pipe_sz) })?;
 
-            thread::spawn(move || super::receive_stream(dst, reader, None, self.buffered)).into()
+            Some(thread::spawn(move || {
+                super::receive_stream(handler, reader, None, self.buffered)
+            }))
         } else {
             None
         };
