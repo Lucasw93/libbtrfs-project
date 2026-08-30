@@ -5,12 +5,11 @@ use crate::{
         btrfs_ioctl_ino_lookup_args, btrfs_ioctl_ino_lookup_user_args,
     },
     ffi::*,
-    util::{IoError, IoResult, btrfs_ioctl},
+    util::btrfs_ioctl,
 };
 #[allow(unused_imports)]
-use std::io::ErrorKind;
-use std::os::fd::BorrowedFd;
-use std::{fs::File, mem::MaybeUninit, os::fd::AsFd, path::Path, ptr};
+use std::io::{self, ErrorKind};
+use std::{fs::File, mem::MaybeUninit, os::fd::AsFd, os::fd::BorrowedFd, path::Path, ptr};
 
 /// Userspace lookup buffer
 pub struct UserLookup<R: AsFd>(MaybeUninit<btrfs_ioctl_ino_lookup_user_args>, R);
@@ -28,7 +27,7 @@ impl<'r> From<BorrowedFd<'r>> for UserLookup<BorrowedFd<'r>>
 
 impl TryFrom<&str> for UserLookup<File>
 {
-    type Error = IoError;
+    type Error = io::Error;
 
     #[inline(always)]
     fn try_from(value: &str) -> Result<Self, Self::Error>
@@ -39,7 +38,7 @@ impl TryFrom<&str> for UserLookup<File>
 
 impl TryFrom<&Path> for UserLookup<File>
 {
-    type Error = IoError;
+    type Error = io::Error;
 
     #[inline(always)]
     fn try_from(value: &Path) -> Result<Self, Self::Error>
@@ -67,7 +66,7 @@ impl<R: AsFd> UserLookup<R>
     /// [`ErrorKind::InvalidInput`]
     ///
     /// > `dirid` is not the directory in which the subvolume, `treeid` is rooted.
-    pub fn path_str(&mut self, dirid: u64, treeid: u64) -> IoResult<(&UnixPath, &UnixStr)>
+    pub fn path_str(&mut self, dirid: u64, treeid: u64) -> io::Result<(&UnixPath, &UnixStr)>
     {
         unsafe {
             let args = self.0.as_mut_ptr();
@@ -104,7 +103,7 @@ impl<'r> From<BorrowedFd<'r>> for Lookup<BorrowedFd<'r>>
 
 impl TryFrom<&str> for Lookup<File>
 {
-    type Error = IoError;
+    type Error = io::Error;
 
     #[inline(always)]
     fn try_from(value: &str) -> Result<Self, Self::Error>
@@ -115,7 +114,7 @@ impl TryFrom<&str> for Lookup<File>
 
 impl TryFrom<&Path> for Lookup<File>
 {
-    type Error = IoError;
+    type Error = io::Error;
 
     #[inline(always)]
     fn try_from(value: &Path) -> Result<Self, Self::Error>
@@ -127,7 +126,7 @@ impl TryFrom<&Path> for Lookup<File>
 impl<R: AsFd> Lookup<R>
 {
     /// Lookup the treeid for the subvolume referenced by the underlying path or file descriptor.
-    pub fn treeid(&mut self) -> IoResult<u64>
+    pub fn treeid(&mut self) -> io::Result<u64>
     {
         unsafe {
             let arg_ptr = self.0.as_mut_ptr();
@@ -155,7 +154,7 @@ impl<R: AsFd> Lookup<R>
     /// # Notes
     ///
     /// **Requires CAP_SYS_ADMIN capabilities**
-    pub fn path_str(&mut self, objectid: u64, treeid: u64) -> IoResult<&UnixPath>
+    pub fn path_str(&mut self, objectid: u64, treeid: u64) -> io::Result<&UnixPath>
     {
         unsafe {
             let args = self.0.as_mut_ptr();

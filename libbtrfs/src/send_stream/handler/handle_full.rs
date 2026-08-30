@@ -2,11 +2,11 @@ use super::*;
 use crate::{
     bindings::btrfs_ioctl_received_subvol_args,
     bindings::{BTRFS_IOC_SET_RECEIVED_SUBVOL, btrfs_ioctl_timespec},
-    util::{IoResult, btrfs_ioctl},
+    util::btrfs_ioctl,
 };
 use std::{
     fs::File,
-    io::ErrorKind,
+    io::{self, ErrorKind},
     mem::{self, ManuallyDrop, MaybeUninit},
     os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd},
     path::Path,
@@ -252,7 +252,7 @@ impl<R: AsFd> AsRawFd for HandleFull<R>
 
 impl<R: AsFd + Send> StreamHandler for HandleFull<R>
 {
-    fn subvol(&mut self, SubvolCmd { path, uuid, ctransid }: SubvolCmd) -> IoResult<Option<()>>
+    fn subvol(&mut self, SubvolCmd { path, uuid, ctransid }: SubvolCmd) -> io::Result<Option<()>>
     {
         if !self.current_subvol.is_empty() {
             return receive_error!("Stream is invalid");
@@ -270,7 +270,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         self.received_args.uuid = uuid.as_bytes().map(|b| b as i8);
         self.received_args.stime = Self::get_btrfs_timespec_from_system_time();
 
-        crate::subvol::io::create(self.dirfd.as_fd(), path)?;
+        crate::subvol::fd::create(self.dirfd.as_fd(), path)?;
 
         Ok(Some(()))
     }
@@ -284,7 +284,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
             ctransid,
             clone_ctransid,
         }: SnapshotCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         unimplemented!(
             concat!(
@@ -299,7 +299,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         )
     }
 
-    fn mkfile(&mut self, MkfileCmd { path, ino: _ }: MkfileCmd) -> IoResult<Option<()>>
+    fn mkfile(&mut self, MkfileCmd { path, ino: _ }: MkfileCmd) -> io::Result<Option<()>>
     {
         let flags = libc::O_WRONLY | libc::O_CREAT | libc::O_TRUNC;
 
@@ -308,7 +308,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn mkdir(&mut self, MkdirCmd { path, ino: _ }: MkdirCmd) -> IoResult<Option<()>>
+    fn mkdir(&mut self, MkdirCmd { path, ino: _ }: MkdirCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
 
@@ -317,7 +317,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn mknod(&mut self, MknodCmd { path, mode, rdev }: MknodCmd) -> IoResult<Option<()>>
+    fn mknod(&mut self, MknodCmd { path, mode, rdev }: MknodCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
         let mode = mode as libc::mode_t & libc::S_IFMT;
@@ -328,7 +328,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn mkfifo(&mut self, MkfifoCmd { path, ino: _ }: MkfifoCmd) -> IoResult<Option<()>>
+    fn mkfifo(&mut self, MkfifoCmd { path, ino: _ }: MkfifoCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
         let mode = HandleFull::MODE | libc::S_IFIFO;
@@ -338,7 +338,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn mksock(&mut self, MksockCmd { path, ino: _ }: MksockCmd) -> IoResult<Option<()>>
+    fn mksock(&mut self, MksockCmd { path, ino: _ }: MksockCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
         let mode = HandleFull::MODE | libc::S_IFSOCK;
@@ -351,7 +351,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn symlink(
         &mut self,
         SymlinkCmd { path, ino: _, path_link }: SymlinkCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         let linkpath = self.get_c_path(path)?;
         let target = self.get_c_path_secondary(path_link)?;
@@ -361,7 +361,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn rename(&mut self, RenameCmd { path, path_to }: RenameCmd) -> IoResult<Option<()>>
+    fn rename(&mut self, RenameCmd { path, path_to }: RenameCmd) -> io::Result<Option<()>>
     {
         let oldpath = self.get_c_path(path)?;
         let newpath = self.get_c_path_secondary(path_to)?;
@@ -371,7 +371,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn link(&mut self, LinkCmd { path, path_link }: LinkCmd) -> IoResult<Option<()>>
+    fn link(&mut self, LinkCmd { path, path_link }: LinkCmd) -> io::Result<Option<()>>
     {
         let oldpath = self.get_c_path(path)?;
         let newpath = self.get_c_path_secondary(path_link)?;
@@ -381,7 +381,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn unlink(&mut self, UnlinkCmd { path }: UnlinkCmd) -> IoResult<Option<()>>
+    fn unlink(&mut self, UnlinkCmd { path }: UnlinkCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
 
@@ -390,7 +390,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn rmdir(&mut self, RmdirCmd { path }: RmdirCmd) -> IoResult<Option<()>>
+    fn rmdir(&mut self, RmdirCmd { path }: RmdirCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
 
@@ -402,7 +402,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn set_xattr(
         &mut self,
         SetXattrCmd { path, xattr_name, xattr_data }: SetXattrCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         // NOTE: The `setxattrat()` system call was only introducted in Linux 6.13 [1].
         // On most platforms it is syscall number 463 [2].
@@ -420,7 +420,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
             xattr_data: &[u8],
             subvol: &[u8],
             fallback: &mut XattrFallback,
-        ) -> IoResult<Option<()>>
+        ) -> io::Result<Option<()>>
         {
             fallback.buf.truncate(fallback.len);
             fallback.buf.extend_from_slice(subvol);
@@ -500,7 +500,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn remove_xattr(
         &mut self,
         RemoveXattrCmd { path, xattr_name }: RemoveXattrCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         // NOTE: The `removexattrat()` system call was only introducted in Linux 6.13 [1]
         // On most platforms it is syscall number 466 [2].
@@ -517,7 +517,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
             name_ptr: *const u8,
             subvol: &[u8],
             fallback: &mut XattrFallback,
-        ) -> IoResult<Option<()>>
+        ) -> io::Result<Option<()>>
         {
             fallback.buf.truncate(fallback.len);
             fallback.buf.extend_from_slice(subvol);
@@ -572,7 +572,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn write(&mut self, WriteCmd { path, file_offset, data }: WriteCmd) -> IoResult<Option<()>>
+    fn write(&mut self, WriteCmd { path, file_offset, data }: WriteCmd) -> io::Result<Option<()>>
     {
         let fd = self.sys_openat(path, libc::O_WRONLY, None)?;
 
@@ -605,7 +605,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
             clone_path,
             clone_offset,
         }: CloneCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         // destination
         let dest_fd =
@@ -639,7 +639,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn truncate(&mut self, TruncateCmd { path, size }: TruncateCmd) -> IoResult<Option<()>>
+    fn truncate(&mut self, TruncateCmd { path, size }: TruncateCmd) -> io::Result<Option<()>>
     {
         if size == 0 {
             self.sys_openat(path, libc::O_TRUNC | libc::O_WRONLY, None)?;
@@ -652,7 +652,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn chmod(&mut self, ChmodCmd { path, mode }: ChmodCmd) -> IoResult<Option<()>>
+    fn chmod(&mut self, ChmodCmd { path, mode }: ChmodCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
 
@@ -668,7 +668,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn chown(&mut self, ChownCmd { path, uid, gid }: ChownCmd) -> IoResult<Option<()>>
+    fn chown(&mut self, ChownCmd { path, uid, gid }: ChownCmd) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
         let owner = uid as libc::uid_t;
@@ -690,7 +690,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn utimes(
         &mut self,
         UtimesCmd { path, atime, mtime, ctime: _ }: UtimesCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         let pathname = self.get_c_path(path)?;
 
@@ -709,7 +709,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn end(&mut self, EndCmd: EndCmd) -> IoResult<Option<()>>
+    fn end(&mut self, EndCmd: EndCmd) -> io::Result<Option<()>>
     {
         if self.current_subvol.is_empty() {
             return receive_error!("Invalid stream");
@@ -728,7 +728,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn update_extent(
         &mut self,
         UpdateExtentCmd { path: _, file_offset: _, size: _ }: UpdateExtentCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         // eprintln!("update_extent {path}, offset={offset}, len={len}");
 
@@ -743,7 +743,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
     fn fallocate(
         &mut self,
         FallocateCmd { path, fallocate_mode, file_offset, size }: FallocateCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         let fd = self.sys_openat(path, libc::O_WRONLY, None)?;
 
@@ -759,7 +759,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
         Ok(Some(()))
     }
 
-    fn fileattr(&mut self, FileattrCmd { path, fileattr }: FileattrCmd) -> IoResult<Option<()>>
+    fn fileattr(&mut self, FileattrCmd { path, fileattr }: FileattrCmd) -> io::Result<Option<()>>
     {
         eprintln!(
             "FileattrCmd: path: {}, fileattr: {fileattr}",
@@ -781,7 +781,7 @@ impl<R: AsFd + Send> StreamHandler for HandleFull<R>
             encryption,
             data,
         }: EncodedWriteCmd,
-    ) -> IoResult<Option<()>>
+    ) -> io::Result<Option<()>>
     {
         let fd = self.sys_openat(path, libc::O_WRONLY, None)?;
 

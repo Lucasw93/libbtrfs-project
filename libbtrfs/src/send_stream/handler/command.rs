@@ -1,5 +1,4 @@
-use crate::util::IoResult;
-use std::range::Range;
+use std::{io, range::Range};
 
 /// Implemented by all send commands
 pub trait SendCmd<'a>: Sized
@@ -8,7 +7,7 @@ pub trait SendCmd<'a>: Sized
     const KEY: u16;
 
     /// Parses the send stream and constructs the send command.
-    fn parse_tlv(stream: &'a [u8]) -> IoResult<Self>;
+    fn parse_tlv(stream: &'a [u8]) -> io::Result<Self>;
 }
 
 /// Implemented by commands that have the `data` attribute.
@@ -21,7 +20,7 @@ pub trait SendCmd<'a>: Sized
 pub trait SendDataCmd<'a>: SendCmd<'a>
 {
     /// Parses the send stream and constructs the send command.
-    fn parse_tlv_v2(stream: &'a [u8]) -> IoResult<Self>;
+    fn parse_tlv_v2(stream: &'a [u8]) -> io::Result<Self>;
 }
 
 macro_rules! SEND_CMD {
@@ -532,7 +531,7 @@ impl<'a> SendCmd<'a> for EncodedWriteCmd<'a>
 {
     const KEY: u16 = 25;
 
-    fn parse_tlv(_: &'a [u8]) -> IoResult<Self>
+    fn parse_tlv(_: &'a [u8]) -> io::Result<Self>
     {
         unreachable!("version 2 only data command")
     }
@@ -540,7 +539,7 @@ impl<'a> SendCmd<'a> for EncodedWriteCmd<'a>
 
 impl<'a> SendDataCmd<'a> for EncodedWriteCmd<'a>
 {
-    fn parse_tlv_v2(payload: &'a [u8]) -> std::io::Result<Self>
+    fn parse_tlv_v2(payload: &'a [u8]) -> io::Result<Self>
     {
         let mut path: Option<&[u8]> = None;
         let mut file_offset: Option<u64> = None;

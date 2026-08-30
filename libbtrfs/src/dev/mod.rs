@@ -10,11 +10,11 @@ use crate::{
         BTRFS_IOC_RM_DEV, BTRFS_IOC_RM_DEV_V2, btrfs_ioctl_dev_info_args,
         btrfs_ioctl_get_dev_stats, btrfs_ioctl_vol_args, btrfs_ioctl_vol_args_v2,
     },
-    util::{IoResult, btrfs_ioctl, set_vol_name},
+    util::{btrfs_ioctl, set_vol_name},
 };
 use std::{
     fs::File,
-    io::ErrorKind,
+    io::{self, ErrorKind},
     mem::MaybeUninit,
     os::{fd::AsFd, unix::ffi::OsStrExt},
     path::Path,
@@ -69,15 +69,15 @@ impl DevStats
 }
 
 /// Returns a [`DevStats`] struct.
-pub fn get_stats<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<DevStats>
+pub fn get_stats<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<DevStats>
 {
-    File::open(fs).and_then(|f| io::get_stats(devid, f))
+    File::open(fs).and_then(|f| fd::get_stats(devid, f))
 }
 
 /// Returns a [`DevStats`] struct that has been allocated on the heap.
-pub fn get_boxed_stats<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<Box<DevStats>>
+pub fn get_boxed_stats<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<Box<DevStats>>
 {
-    File::open(fs).and_then(|f| io::get_boxed_stats(devid, f))
+    File::open(fs).and_then(|f| fd::get_boxed_stats(devid, f))
 }
 
 /// Adds a device to a btrfs filesystem
@@ -85,9 +85,9 @@ pub fn get_boxed_stats<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<Box<DevSta
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn add<P: AsRef<Path>>(device: P, fs: P) -> IoResult<()>
+pub fn add<P: AsRef<Path>>(device: P, fs: P) -> io::Result<()>
 {
-    File::open(fs).and_then(|f| io::add(device, f))
+    File::open(fs).and_then(|f| fd::add(device, f))
 }
 
 /// Removes a device from a btrfs filesystem by device name
@@ -95,9 +95,9 @@ pub fn add<P: AsRef<Path>>(device: P, fs: P) -> IoResult<()>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn rm<P: AsRef<Path>>(device: P, fs: P) -> IoResult<()>
+pub fn rm<P: AsRef<Path>>(device: P, fs: P) -> io::Result<()>
 {
-    File::open(fs).and_then(|f| io::rm(device, f))
+    File::open(fs).and_then(|f| fd::rm(device, f))
 }
 
 /// Remove a btrfs device from the filesystem by device id
@@ -105,20 +105,20 @@ pub fn rm<P: AsRef<Path>>(device: P, fs: P) -> IoResult<()>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn rm_by_id<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<()>
+pub fn rm_by_id<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<()>
 {
-    File::open(fs).and_then(|f| io::rm_by_id(devid, f))
+    File::open(fs).and_then(|f| fd::rm_by_id(devid, f))
 }
 
-/// Entry for I/O resources.
-pub mod io
+/// Entry for file system resources.
+pub mod fd
 {
     use super::*;
 
-    pub use info::io::{boxed_info, info, iter};
+    pub use info::fd::{boxed_info, info, iter};
 
     /// See [super::get_stats()]
-    pub fn get_stats<R: AsFd>(devid: u64, resource: R) -> IoResult<DevStats>
+    pub fn get_stats<R: AsFd>(devid: u64, resource: R) -> io::Result<DevStats>
     {
         let mut stats_args: DevStats = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -129,7 +129,7 @@ pub mod io
     }
 
     /// See [super::get_boxed_stats()]
-    pub fn get_boxed_stats<R: AsFd>(devid: u64, resource: R) -> IoResult<Box<DevStats>>
+    pub fn get_boxed_stats<R: AsFd>(devid: u64, resource: R) -> io::Result<Box<DevStats>>
     {
         let mut stats_args: Box<DevStats> = unsafe { Box::new_zeroed().assume_init() };
 
@@ -145,7 +145,7 @@ pub mod io
     }
 
     /// See [super::add()]
-    pub fn add<R: AsFd, P: AsRef<Path>>(device: P, resource: R) -> IoResult<()>
+    pub fn add<R: AsFd, P: AsRef<Path>>(device: P, resource: R) -> io::Result<()>
     {
         let mut vol_args: btrfs_ioctl_vol_args = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -154,9 +154,9 @@ pub mod io
     }
 
     /// See [super::rm()]
-    pub fn rm<R: AsFd, P: AsRef<Path>>(device: P, resource: R) -> IoResult<()>
+    pub fn rm<R: AsFd, P: AsRef<Path>>(device: P, resource: R) -> io::Result<()>
     {
-        fn rm_dev_v1<R: AsFd>(device: &[u8], resource: R) -> IoResult<()>
+        fn rm_dev_v1<R: AsFd>(device: &[u8], resource: R) -> io::Result<()>
         {
             let mut vol_args: btrfs_ioctl_vol_args = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -179,7 +179,7 @@ pub mod io
     }
 
     /// See [super::rm_by_id()]
-    pub fn rm_by_id<R: AsFd>(devid: u64, resource: R) -> IoResult<()>
+    pub fn rm_by_id<R: AsFd>(devid: u64, resource: R) -> io::Result<()>
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 

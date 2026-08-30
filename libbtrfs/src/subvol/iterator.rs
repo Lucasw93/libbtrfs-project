@@ -1,12 +1,10 @@
-use super::{
-    AsFd, AsRawFd, File, IoResult, MAIN_SEPARATOR, MaybeUninit, Path, SubvolInfo, btrfs_ioctl,
-};
+use super::{AsFd, AsRawFd, File, MAIN_SEPARATOR, MaybeUninit, Path, SubvolInfo, btrfs_ioctl};
 use crate::bindings::{BTRFS_IOC_GET_SUBVOL_ROOTREF, btrfs_ioctl_get_subvol_rootref_args};
 use crate::{
     Flags,
     ffi::{UnixPath, UnixPathBuf},
 };
-use std::{mem::ManuallyDrop, os::fd::FromRawFd};
+use std::{io, mem::ManuallyDrop, os::fd::FromRawFd};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Color
@@ -41,7 +39,7 @@ impl<R: AsFd> Iter<R>
         is_root: bool,
         color: Color,
         path: Option<Option<&'a UnixPath>>,
-    ) -> IoResult<()>
+    ) -> io::Result<()>
     {
         let args = unsafe {
             self.args.as_mut_ptr().write_bytes(0, 1);
@@ -210,15 +208,15 @@ impl SubvolItem
     }
 
     /// Returns a [`SubvolInfo`] struct for this subvolume.
-    pub fn get_info(&self) -> IoResult<SubvolInfo>
+    pub fn get_info(&self) -> io::Result<SubvolInfo>
     {
-        super::io::get_info(self.f.as_fd())
+        super::fd::get_info(self.f.as_fd())
     }
 
     /// Returns a heap allocated [`SubvolInfo`] struct.
-    pub fn get_boxed_info(&self) -> IoResult<Box<SubvolInfo>>
+    pub fn get_boxed_info(&self) -> io::Result<Box<SubvolInfo>>
     {
-        super::io::get_boxed_info(self.f.as_fd())
+        super::fd::get_boxed_info(self.f.as_fd())
     }
 
     /// Inode where this subvolume is rooted.
@@ -275,10 +273,10 @@ pub fn iter<P: AsRef<Path>>(
     flags: Flags,
 ) -> std::io::Result<impl Iterator<Item = std::io::Result<SubvolItem>>>
 {
-    File::open(path).and_then(|f| io::iter(f, flags))
+    File::open(path).and_then(|f| fd::iter(f, flags))
 }
 
-pub mod io
+pub mod fd
 {
     use super::*;
 

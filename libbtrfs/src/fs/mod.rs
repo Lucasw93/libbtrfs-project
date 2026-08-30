@@ -6,12 +6,13 @@ use crate::{
         BTRFS_FS_INFO_FLAG_METADATA_UUID, BTRFS_IOC_FS_INFO, BTRFS_IOC_SPACE_INFO,
         btrfs_ioctl_fs_info_args, btrfs_ioctl_space_args, btrfs_ioctl_space_info,
     },
-    util::{IoResult, btrfs_ioctl},
+    util::btrfs_ioctl,
 };
 use std::{
     alloc::{Layout, alloc, dealloc, handle_alloc_error},
     ffi::CString,
     fs::File,
+    io,
     mem::{MaybeUninit, align_of, size_of},
     os::fd::{AsFd, AsRawFd},
     os::unix::prelude::OsStrExt,
@@ -116,7 +117,7 @@ impl FsInfo
 /// Check if a path references a btrfs filesystem
 ///
 /// This function returns `Ok(true)` if `fs` can be determined to reference a btrfs filesystem.
-pub fn is_btrfs<P: AsRef<Path>>(fs: P) -> IoResult<bool>
+pub fn is_btrfs<P: AsRef<Path>>(fs: P) -> io::Result<bool>
 {
     let cstring = CString::new(fs.as_ref().as_os_str().as_bytes()).unwrap();
 
@@ -154,18 +155,18 @@ pub fn is_btrfs<P: AsRef<Path>>(fs: P) -> IoResult<bool>
 ///
 /// # Ok::<(), std::io::Error>(())
 /// ```
-pub fn info<P: AsRef<Path>>(fs: P, flags: Flags) -> IoResult<FsInfo>
+pub fn info<P: AsRef<Path>>(fs: P, flags: Flags) -> io::Result<FsInfo>
 {
-    File::open(fs.as_ref()).and_then(|f| io::info(f, flags))
+    File::open(fs.as_ref()).and_then(|f| fd::info(f, flags))
 }
 
 /// Returns a [`FsInfo`] struct that has been allocated on the heap.
 ///
 /// This function is equivelent to [`info()`] except memeory has been allocated on heap instead of
 /// the stack.
-pub fn boxed_info<P: AsRef<Path>>(fs: P, flags: Flags) -> IoResult<FsInfo>
+pub fn boxed_info<P: AsRef<Path>>(fs: P, flags: Flags) -> io::Result<FsInfo>
 {
-    File::open(fs.as_ref()).and_then(|f| io::info(f, flags))
+    File::open(fs.as_ref()).and_then(|f| fd::info(f, flags))
 }
 
 /// Information about a chunk allocated to a particular block group
@@ -183,7 +184,7 @@ impl SpaceInfo
     }
 
     /// Raid profile for this chunk
-    pub fn raid_profile(&self) -> IoResult<block_group::RaidProfile>
+    pub fn raid_profile(&self) -> io::Result<block_group::RaidProfile>
     {
         self.0.flags.try_into()
     }
@@ -253,19 +254,19 @@ impl Drop for Iter
 /// `fs`
 pub fn get_spaces<P: AsRef<Path>>(
     fs: P,
-) -> IoResult<impl Iterator<Item = SpaceInfo> + ExactSizeIterator>
+) -> io::Result<impl Iterator<Item = SpaceInfo> + ExactSizeIterator>
 {
-    File::open(fs.as_ref()).and_then(io::get_spaces)
+    File::open(fs.as_ref()).and_then(fd::get_spaces)
 }
 
-/// Entry for I/O resources.
-pub mod io
+/// Entry for file system resources.
+pub mod fd
 {
     use super::*;
     use std::mem::MaybeUninit;
 
     /// See [super::is_btrfs()]
-    pub fn is_btrfs<R: AsFd>(resource: R) -> IoResult<bool>
+    pub fn is_btrfs<R: AsFd>(resource: R) -> io::Result<bool>
     {
         let mut sfs = MaybeUninit::<libc::statfs>::uninit();
         unsafe {
@@ -275,7 +276,7 @@ pub mod io
     }
 
     /// See [super::info()]
-    pub fn info<R: AsFd>(resource: R, flags: Flags) -> IoResult<FsInfo>
+    pub fn info<R: AsFd>(resource: R, flags: Flags) -> io::Result<FsInfo>
     {
         let mut info_args: FsInfo = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -285,7 +286,7 @@ pub mod io
     }
 
     /// See [super::boxed_info()]
-    pub fn boxed_info<R: AsFd>(resource: R, flags: Flags) -> IoResult<Box<FsInfo>>
+    pub fn boxed_info<R: AsFd>(resource: R, flags: Flags) -> io::Result<Box<FsInfo>>
     {
         let mut info_args: Box<FsInfo> = unsafe { Box::new_zeroed().assume_init() };
 
@@ -297,7 +298,7 @@ pub mod io
     /// See [super::get_spaces()]
     pub fn get_spaces<R: AsFd>(
         resource: R,
-    ) -> IoResult<impl Iterator<Item = SpaceInfo> + ExactSizeIterator>
+    ) -> io::Result<impl Iterator<Item = SpaceInfo> + ExactSizeIterator>
     {
         let mut args: btrfs_ioctl_space_args = unsafe { MaybeUninit::zeroed().assume_init() };
 

@@ -1,7 +1,6 @@
 use super::{handler::StreamHandler, read_stream::SendStream};
-use crate::util::IoResult;
 use std::{
-    io::Read,
+    io::{self, Read},
     sync::{Arc, atomic::AtomicU64},
 };
 
@@ -28,7 +27,7 @@ pub fn receive_stream<H: StreamHandler, S: Read>(
     src: S,
     position: Option<Arc<AtomicU64>>,
     buffered: bool,
-) -> IoResult<()>
+) -> io::Result<()>
 {
     if buffered {
         SendStream::new(src, position).read_and_handle_buffered(handler)

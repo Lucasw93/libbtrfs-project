@@ -66,23 +66,23 @@ impl SubvolRootRef
 ///     })
 /// }
 /// ```
-pub fn get_rootref<P, F>(subvol: P, f: F) -> IoResult<()>
+pub fn get_rootref<P, F>(subvol: P, f: F) -> io::Result<()>
 where
     P: AsRef<Path>,
-    F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> IoResult<()>,
+    F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> io::Result<()>,
 {
-    File::open(subvol).and_then(|r| io::get_rootref(r, f))
+    File::open(subvol).and_then(|r| fd::get_rootref(r, f))
 }
 
-pub mod io
+pub mod fd
 {
     use super::*;
 
     /// see [super::get_rootref()]
-    pub fn get_rootref<R, F>(resource: R, mut f: F) -> IoResult<()>
+    pub fn get_rootref<R, F>(resource: R, mut f: F) -> io::Result<()>
     where
         R: AsFd,
-        F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> IoResult<()>,
+        F: FnMut(SubvolRootRef, &UnixPath, &UnixStr) -> io::Result<()>,
     {
         let mut args: btrfs_ioctl_get_subvol_rootref_args =
             unsafe { MaybeUninit::zeroed().assume_init() };

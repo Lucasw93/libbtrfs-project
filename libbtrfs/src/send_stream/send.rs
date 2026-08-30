@@ -1,15 +1,14 @@
 use super::handler::StreamHandler;
 use crate::{
     bindings::{BTRFS_IOC_SEND, BTRFS_SEND_FLAG_VERSION, btrfs_ioctl_send_args},
-    fs::io::is_btrfs,
-    util::IoResult,
+    fs::fd::is_btrfs,
     util::btrfs_ioctl,
     util::send::supported_send_version,
 };
 use libc::F_SETPIPE_SZ;
 use std::{
     fs::File,
-    io::{ErrorKind, PipeReader, PipeWriter, pipe, stdout},
+    io::{self, ErrorKind, PipeReader, PipeWriter, pipe, stdout},
     mem::MaybeUninit,
     os::fd::{AsFd, AsRawFd, OwnedFd},
     path::Path,
@@ -24,14 +23,14 @@ use std::{
 pub struct SendHandle
 {
     position: Arc<AtomicU64>,
-    send_handle: JoinHandle<IoResult<()>>,
-    recv_handle: Option<JoinHandle<IoResult<()>>>,
+    send_handle: JoinHandle<io::Result<()>>,
+    recv_handle: Option<JoinHandle<io::Result<()>>>,
 }
 
 impl SendHandle
 {
     /// Joins both the sending and receiving threads.
-    pub fn join(self) -> IoResult<()>
+    pub fn join(self) -> io::Result<()>
     {
         if let Some(handle) = self.recv_handle {
             handle.join().unwrap()?;
@@ -95,7 +94,7 @@ impl<R: AsFd, H> From<R> for SendBuilder<R, H>
 impl<H> SendBuilder<OwnedFd, H>
 {
     /// Construes a new builder from a given path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> IoResult<Self>
+    pub fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self>
     {
         Ok(Self::from(OwnedFd::from(File::open(path)?)))
     }
@@ -185,7 +184,7 @@ where
     }
 
     /// Consumes the builder and spawns a non blocking send.
-    pub fn spawn_send(mut self) -> IoResult<SendHandle>
+    pub fn spawn_send(mut self) -> io::Result<SendHandle>
     {
         let (reader, writer): (PipeReader, PipeWriter);
 
@@ -234,7 +233,7 @@ where
     }
 
     /// Consumes the builder and performs a blocking send.
-    pub fn blocking_send(mut self) -> IoResult<()>
+    pub fn blocking_send(mut self) -> io::Result<()>
     {
         let (reader, writer): (PipeReader, PipeWriter);
 

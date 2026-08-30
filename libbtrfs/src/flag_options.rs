@@ -1,7 +1,6 @@
 #![allow(missing_docs)]
-use crate::util::{IoError, IoResult};
 use bitflags::bitflags;
-use std::io::ErrorKind;
+use std::io;
 
 bitflags! {
     /// Flags
@@ -57,7 +56,7 @@ macro_rules! build_raw_flag {
 
 impl Flags
 {
-    fn check_invalid(&self, mask: u64) -> IoResult<()>
+    fn check_invalid(&self, mask: u64) -> io::Result<()>
     {
         let invalid_bits = self.bits() & !mask;
 
@@ -65,7 +64,7 @@ impl Flags
             let flags = Flags::from_bits_truncate(invalid_bits);
             let msg = format!("Invalid flags: {flags:?}");
 
-            return Err(IoError::new(ErrorKind::InvalidInput, msg));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, msg));
         }
 
         Ok(())
@@ -74,7 +73,7 @@ impl Flags
     const FS_INFO_MASK: u64 =
         Flags::CSUM_INFO.bits() | Flags::GENERATION.bits() | Flags::METADATA_UUID.bits();
 
-    pub(crate) fn to_raw_fs_info_flags(self) -> IoResult<u64>
+    pub(crate) fn to_raw_fs_info_flags(self) -> io::Result<u64>
     {
         self.check_invalid(Self::FS_INFO_MASK)?;
 
@@ -97,7 +96,7 @@ impl Flags
         | Flags::VERSION.bits()
         | Flags::COMPRESSED.bits();
 
-    pub(crate) fn to_raw_send_flags(self) -> IoResult<u64>
+    pub(crate) fn to_raw_send_flags(self) -> io::Result<u64>
     {
         self.check_invalid(Self::SEND_MASK)?;
 

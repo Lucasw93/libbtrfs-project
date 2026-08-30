@@ -1,18 +1,16 @@
-use crate::{
-    bindings::btrfs_ioctl_get_subvol_info_args, tree_search::tree_item::RootItem, util::IoResult,
-};
-use std::fs::OpenOptions;
-use std::os::fd::OwnedFd;
-use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+use crate::{bindings::btrfs_ioctl_get_subvol_info_args, tree_search::tree_item::RootItem};
 use std::{
     ffi::{OsStr, c_char},
-    io::ErrorKind,
+    fs::OpenOptions,
+    io::{self, ErrorKind},
+    os::fd::OwnedFd,
+    os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
     path::{Component, MAIN_SEPARATOR, Path},
     ptr::write,
 };
 
 /// Fill the name field for btrfs_ioctl_vol_args_v2 or btrfs_ioctl_vol_args.
-pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> IoResult<()>
+pub fn set_vol_name<const N: usize>(name: &[u8], dst: &mut [c_char; N]) -> io::Result<()>
 {
     (name.contains(&0) || !copy_bytes_to_c_array!(name, dst))
         .then(|| ErrorKind::InvalidInput.into())
@@ -45,7 +43,7 @@ fn parse_parent_and_name(path: &Path) -> (&OsStr, &[u8])
 
 /// Returns the parent dir and name as a tuple for a given path.
 /// If the path contains invalid utf-8 then [`InvalidData`] is returned
-pub fn open_parent_with_name(path: &Path) -> IoResult<(OwnedFd, &[u8])>
+pub fn open_parent_with_name(path: &Path) -> io::Result<(OwnedFd, &[u8])>
 {
     let (dirname, basename) = parse_parent_and_name(path);
 

@@ -13,12 +13,12 @@ use crate::{
     fs, lookup,
     tree_search::tree_item::{DirItem, RootBackref, TreeItem, TreeItemName},
     tree_search::{self, Query, SearchBuilder, SearchKeyBuilder, TreeId},
-    util::{IoError, IoResult, btrfs_ioctl, open_parent_with_name, set_vol_name},
+    util::{btrfs_ioctl, open_parent_with_name, set_vol_name},
 };
 use std::{
     ffi::OsString,
     fs::File,
-    io::ErrorKind,
+    io::{self, ErrorKind},
     mem::MaybeUninit,
     os::fd::AsFd,
     os::unix::{fs::MetadataExt, io::AsRawFd},
@@ -79,16 +79,16 @@ pub mod snap
     ///
     /// # Ok::<(), std::io::Error>(())
     /// ```
-    pub fn create<P: AsRef<Path>>(snapvol: P, pathname: P, readonly: bool) -> IoResult<()>
+    pub fn create<P: AsRef<Path>>(snapvol: P, pathname: P, readonly: bool) -> io::Result<()>
     {
         let snapvol = File::open(snapvol)?;
 
         open_parent_with_name(pathname.as_ref())
-            .and_then(|(dir, name)| io::create(snapvol.into(), dir, name, readonly))
+            .and_then(|(dir, name)| fd::create(snapvol.into(), dir, name, readonly))
     }
 
-    /// Entry for I/O resources.
-    pub mod io
+    /// Entry for file system resources.
+    pub mod fd
     {
         use super::*;
 
@@ -98,7 +98,7 @@ pub mod snap
             dir: R,
             name: N,
             readonly: bool,
-        ) -> IoResult<()>
+        ) -> io::Result<()>
         {
             let mut vol_args: btrfs_ioctl_vol_args_v2 =
                 unsafe { MaybeUninit::zeroed().assume_init() };
@@ -117,7 +117,7 @@ pub mod snap
 /// Check if a path represents a btrfs subvolume.
 ///
 /// This function returns `Ok(true)` if `subvol` can be determined to represent a btrfs subvolume.
-pub fn is_subvol<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
+pub fn is_subvol<P: AsRef<Path>>(subvol: P) -> io::Result<bool>
 {
     if !fs::is_btrfs(subvol.as_ref())? {
         return Ok(false);
@@ -148,9 +148,9 @@ pub fn is_subvol<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
 ///
 /// > Read/Write permissions to the parent directory is not allowed or search permissions is denied
 /// for on the the directorys in path prefix of `subvol`.
-pub fn create<P: AsRef<Path>>(pathname: P) -> IoResult<()>
+pub fn create<P: AsRef<Path>>(pathname: P) -> io::Result<()>
 {
-    open_parent_with_name(pathname.as_ref()).and_then(|(dir, name)| io::create(dir, name))
+    open_parent_with_name(pathname.as_ref()).and_then(|(dir, name)| fd::create(dir, name))
 }
 
 /// Remove a btrfs subvolume.
@@ -181,9 +181,9 @@ pub fn create<P: AsRef<Path>>(pathname: P) -> IoResult<()>
 ///
 /// **Requires CAP_SYS_ADMIN capabilities — (*unless the filesystem is mounted with
 /// user_subvol_rm_allowed*)**
-pub fn destroy<P: AsRef<Path>>(subvol: P) -> IoResult<()>
+pub fn destroy<P: AsRef<Path>>(subvol: P) -> io::Result<()>
 {
-    open_parent_with_name(subvol.as_ref()).and_then(|(dir, name)| io::destroy(dir, name))
+    open_parent_with_name(subvol.as_ref()).and_then(|(dir, name)| fd::destroy(dir, name))
 }
 
 /// Remove a btrfs subvolume after removing all nested subvolumes.
@@ -216,13 +216,13 @@ pub fn destroy<P: AsRef<Path>>(subvol: P) -> IoResult<()>
 /// user_subvol_rm_allowed*)**
 ///
 /// [`io::Error`]: std::io::Error
-pub fn destroy_all<F: Fn(Option<&Path>, IoError), P: AsRef<Path>>(
+pub fn destroy_all<F: Fn(Option<&Path>, io::Error), P: AsRef<Path>>(
     subvol: P,
     on_error: F,
-) -> IoResult<()>
+) -> io::Result<()>
 {
     open_parent_with_name(subvol.as_ref())
-        .and_then(|(dir, name)| io::destroy_all(dir, name, on_error))
+        .and_then(|(dir, name)| fd::destroy_all(dir, name, on_error))
 }
 
 /// Remove a btrfs subvolume by its subvolume id.
@@ -245,9 +245,9 @@ pub fn destroy_all<F: Fn(Option<&Path>, IoError), P: AsRef<Path>>(
 ///
 /// **Requires CAP_SYS_ADMIN capabilities — (*unless the filesystem is mounted with
 /// user_subvol_rm_allowed*)**
-pub fn destroy_by_id<P: AsRef<Path>>(subvolid: u64, fs: P) -> IoResult<()>
+pub fn destroy_by_id<P: AsRef<Path>>(subvolid: u64, fs: P) -> io::Result<()>
 {
-    File::open(fs.as_ref()).and_then(|f| io::destroy_by_id(subvolid, f))
+    File::open(fs.as_ref()).and_then(|f| fd::destroy_by_id(subvolid, f))
 }
 
 /// Gets the full subvolume path to the filesystem root.
@@ -259,9 +259,9 @@ pub fn destroy_by_id<P: AsRef<Path>>(subvolid: u64, fs: P) -> IoResult<()>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn get_path<P: AsRef<Path>>(treeid: u64, fs: P) -> IoResult<OsString>
+pub fn get_path<P: AsRef<Path>>(treeid: u64, fs: P) -> io::Result<OsString>
 {
-    File::open(fs.as_ref()).and_then(|f| io::get_path(treeid, f))
+    File::open(fs.as_ref()).and_then(|f| fd::get_path(treeid, f))
 }
 
 /// Gets the default subvolume for the filesystem.
@@ -269,9 +269,9 @@ pub fn get_path<P: AsRef<Path>>(treeid: u64, fs: P) -> IoResult<OsString>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn get_default<P: AsRef<Path>>(fs: P) -> IoResult<u64>
+pub fn get_default<P: AsRef<Path>>(fs: P) -> io::Result<u64>
 {
-    File::open(fs.as_ref()).and_then(io::get_default)
+    File::open(fs.as_ref()).and_then(fd::get_default)
 }
 
 /// Sets the default subvolume for a btrfs filesystem.
@@ -285,9 +285,9 @@ pub fn get_default<P: AsRef<Path>>(fs: P) -> IoResult<u64>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn set_default<P: AsRef<Path>>(id: u64, fs: P) -> IoResult<()>
+pub fn set_default<P: AsRef<Path>>(id: u64, fs: P) -> io::Result<()>
 {
-    File::open(fs.as_ref()).and_then(|f| io::set_default(id, f))
+    File::open(fs.as_ref()).and_then(|f| fd::set_default(id, f))
 }
 
 /// Gets the read-only status for a subvolume.
@@ -306,9 +306,9 @@ pub fn set_default<P: AsRef<Path>>(id: u64, fs: P) -> IoResult<()>
 ///
 /// > Read access for `subvol` is not allowed, or search permission is denied for one of the
 /// directorys in path prefix of `subvol`.
-pub fn is_readonly<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
+pub fn is_readonly<P: AsRef<Path>>(subvol: P) -> io::Result<bool>
 {
-    File::open(subvol.as_ref()).and_then(io::is_readonly)
+    File::open(subvol.as_ref()).and_then(fd::is_readonly)
 }
 
 /// Sets the readonly flag for a subvolume.
@@ -327,26 +327,26 @@ pub fn is_readonly<P: AsRef<Path>>(subvol: P) -> IoResult<bool>
 ///
 /// Read access for `subvol` is not allowed, or search permission is denied for one of the
 /// directorys in path prefix of `subvol`.
-pub fn set_readonly<P: AsRef<Path>>(subvol: P, readonly: bool) -> IoResult<()>
+pub fn set_readonly<P: AsRef<Path>>(subvol: P, readonly: bool) -> io::Result<()>
 {
-    File::open(&subvol).and_then(|f| io::set_readonly(f, readonly))
+    File::open(&subvol).and_then(|f| fd::set_readonly(f, readonly))
 }
 
-/// Entry for I/O resources.
-pub mod io
+/// Entry for file system resources.
+pub mod fd
 {
     use super::*;
     use std::mem::{ManuallyDrop, MaybeUninit};
     use std::os::{fd::FromRawFd, unix::ffi::OsStringExt};
 
-    pub use info::io::{get_boxed_info, get_info, get_info_by_id};
-    pub use iterator::io::iter;
-    pub use rootref::io::get_rootref;
+    pub use info::fd::{get_boxed_info, get_info, get_info_by_id};
+    pub use iterator::fd::iter;
+    pub use rootref::fd::get_rootref;
 
     /// See [super::is_subvol()]
-    pub fn is_subvol<R: AsFd>(fs: R) -> IoResult<bool>
+    pub fn is_subvol<R: AsFd>(fs: R) -> io::Result<bool>
     {
-        if !fs::io::is_btrfs(fs.as_fd())? {
+        if !fs::fd::is_btrfs(fs.as_fd())? {
             return Ok(false);
         }
         ManuallyDrop::new(unsafe { File::from_raw_fd(fs.as_fd().as_raw_fd()) })
@@ -355,7 +355,7 @@ pub mod io
     }
 
     /// See [super::create()]
-    pub fn create<R: AsFd, N: AsRef<[u8]>>(dir: R, name: N) -> IoResult<()>
+    pub fn create<R: AsFd, N: AsRef<[u8]>>(dir: R, name: N) -> io::Result<()>
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -364,7 +364,7 @@ pub mod io
     }
 
     /// See [super::destroy()]
-    pub fn destroy<R: AsFd, N: AsRef<[u8]>>(dir: R, name: N) -> IoResult<()>
+    pub fn destroy<R: AsFd, N: AsRef<[u8]>>(dir: R, name: N) -> io::Result<()>
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -373,9 +373,9 @@ pub mod io
     }
 
     /// See [super::destroy_all()]
-    pub fn destroy_all<F, R, N>(dir: R, name: N, on_error: F) -> IoResult<()>
+    pub fn destroy_all<F, R, N>(dir: R, name: N, on_error: F) -> io::Result<()>
     where
-        F: Fn(Option<&Path>, IoError),
+        F: Fn(Option<&Path>, io::Error),
         R: AsFd,
         N: AsRef<[u8]>,
     {
@@ -423,7 +423,7 @@ pub mod io
     }
 
     /// See [super::destroy_by_id()]
-    pub fn destroy_by_id<R: AsFd>(subvolid: u64, resource: R) -> IoResult<()>
+    pub fn destroy_by_id<R: AsFd>(subvolid: u64, resource: R) -> io::Result<()>
     {
         let mut vol_args: btrfs_ioctl_vol_args_v2 = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -434,7 +434,7 @@ pub mod io
     }
 
     /// See [super::get_default()]
-    pub fn get_default<R: AsFd>(resource: R) -> IoResult<u64>
+    pub fn get_default<R: AsFd>(resource: R) -> io::Result<u64>
     {
         let mut search = SearchBuilder::new(resource)
             .tree(TreeId::RootTree)
@@ -459,13 +459,13 @@ pub mod io
     }
 
     /// See [super::set_default()]
-    pub fn set_default<R: AsFd>(mut id: u64, fs: R) -> IoResult<()>
+    pub fn set_default<R: AsFd>(mut id: u64, fs: R) -> io::Result<()>
     {
         btrfs_ioctl(fs.as_fd(), BTRFS_IOC_DEFAULT_SUBVOL, &mut id)
     }
 
     /// See [super::is_readonly()]
-    pub fn is_readonly<R: AsFd>(subvol: R) -> IoResult<bool>
+    pub fn is_readonly<R: AsFd>(subvol: R) -> io::Result<bool>
     {
         let mut flags: u64 = 0;
 
@@ -474,7 +474,7 @@ pub mod io
     }
 
     /// See [super::set_readonly()]
-    pub fn set_readonly<R: AsFd>(subvol: R, readonly: bool) -> IoResult<()>
+    pub fn set_readonly<R: AsFd>(subvol: R, readonly: bool) -> io::Result<()>
     {
         let mut flags: u64 = 0;
 
@@ -489,7 +489,7 @@ pub mod io
     }
 
     /// See [super::get_path()]
-    pub fn get_path<R: AsFd>(treeid: u64, fs: R) -> IoResult<OsString>
+    pub fn get_path<R: AsFd>(treeid: u64, fs: R) -> io::Result<OsString>
     {
         let mut pos = 128;
         let mut buf = Vec::<u8>::with_capacity(pos);

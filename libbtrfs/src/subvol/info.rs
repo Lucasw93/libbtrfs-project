@@ -157,18 +157,18 @@ impl SubvolInfo
 /// [`ErrorKind::NotFound`]
 ///
 /// > No file exists at `pathname`
-pub fn get_info<P: AsRef<Path>>(pathname: P) -> IoResult<SubvolInfo>
+pub fn get_info<P: AsRef<Path>>(pathname: P) -> io::Result<SubvolInfo>
 {
-    File::open(pathname).and_then(io::get_info)
+    File::open(pathname).and_then(fd::get_info)
 }
 
 /// Return a [`SubvolInfo`] struct that has been allocated on the heap.
 ///
 /// This function is equivelent to [`get_info`] except memory is allocated on the heap instead of
 /// the stack.
-pub fn get_boxed_info<P: AsRef<Path>>(pathname: P) -> IoResult<Box<SubvolInfo>>
+pub fn get_boxed_info<P: AsRef<Path>>(pathname: P) -> io::Result<Box<SubvolInfo>>
 {
-    File::open(pathname).and_then(io::get_boxed_info)
+    File::open(pathname).and_then(fd::get_boxed_info)
 }
 
 /// Query information about a btrfs subvolume by its subvolume id
@@ -182,18 +182,18 @@ pub fn get_boxed_info<P: AsRef<Path>>(pathname: P) -> IoResult<Box<SubvolInfo>>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn get_info_by_id<P: AsRef<Path>>(treeid: u64, fs: P) -> IoResult<SubvolInfo>
+pub fn get_info_by_id<P: AsRef<Path>>(treeid: u64, fs: P) -> io::Result<SubvolInfo>
 {
-    File::open(fs).and_then(|f| io::get_info_by_id(treeid, f))
+    File::open(fs).and_then(|f| fd::get_info_by_id(treeid, f))
 }
 
-pub mod io
+pub mod fd
 {
     use super::*;
     use crate::bindings::{BTRFS_FS_TREE_OBJECTID, BTRFS_ROOT_BACKREF_KEY, BTRFS_ROOT_ITEM_KEY};
 
     /// See [super::get_info()]
-    pub fn get_info<R: AsFd>(fd: R) -> IoResult<SubvolInfo>
+    pub fn get_info<R: AsFd>(fd: R) -> io::Result<SubvolInfo>
     {
         let mut info_args: MaybeUninit<SubvolInfo> = MaybeUninit::zeroed();
 
@@ -202,7 +202,7 @@ pub mod io
     }
 
     /// See [super::get_boxed_info()]
-    pub fn get_boxed_info<R: AsFd>(fd: R) -> IoResult<Box<SubvolInfo>>
+    pub fn get_boxed_info<R: AsFd>(fd: R) -> io::Result<Box<SubvolInfo>>
     {
         let mut info_args: Box<MaybeUninit<SubvolInfo>> = Box::new_zeroed();
 
@@ -211,7 +211,7 @@ pub mod io
     }
 
     /// See [super::get_info_by_id()]
-    pub fn get_info_by_id<R: AsFd>(treeid: u64, fd: R) -> IoResult<SubvolInfo>
+    pub fn get_info_by_id<R: AsFd>(treeid: u64, fd: R) -> io::Result<SubvolInfo>
     {
         let mut info = MaybeUninit::<btrfs_ioctl_get_subvol_info_args>::uninit();
         let mut got_root_item = false;

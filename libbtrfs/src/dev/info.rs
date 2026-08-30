@@ -56,15 +56,15 @@ impl DevInfo
 /// Returns information about a device in a btrfs filesystem with the device id of `devid`
 ///
 /// For an iterator over all devices in a btrfs filesystem see [`iter()`].
-pub fn info<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<DevInfo>
+pub fn info<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<DevInfo>
 {
-    File::open(fs).and_then(|f| io::info(devid, f))
+    File::open(fs).and_then(|f| fd::info(devid, f))
 }
 
 /// Returns a [`DevInfo`] struct that has been allocated on the heap.
-pub fn boxed_info<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<Box<DevInfo>>
+pub fn boxed_info<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<Box<DevInfo>>
 {
-    File::open(fs).and_then(|f| io::boxed_info(devid, f))
+    File::open(fs).and_then(|f| fd::boxed_info(devid, f))
 }
 
 /// Returns an iterator over devices in a btrfs filesystem
@@ -97,18 +97,18 @@ pub fn boxed_info<P: AsRef<Path>>(devid: u64, fs: P) -> IoResult<Box<DevInfo>>
 /// ```
 pub fn iter<P: AsRef<Path>>(
     fs: P,
-) -> IoResult<impl Iterator<Item = IoResult<DevInfo>> + ExactSizeIterator>
+) -> io::Result<impl Iterator<Item = io::Result<DevInfo>> + ExactSizeIterator>
 {
     File::open(fs).and_then(|f| Iter::new_internal(f))
 }
 
-pub(super) mod io
+pub(super) mod fd
 {
     use super::*;
     use std::os::fd::AsFd;
 
     /// See [super::info()]
-    pub fn info<R: AsFd>(devid: u64, resource: R) -> IoResult<DevInfo>
+    pub fn info<R: AsFd>(devid: u64, resource: R) -> io::Result<DevInfo>
     {
         let mut info_args: DevInfo = unsafe { MaybeUninit::zeroed().assume_init() };
 
@@ -118,7 +118,7 @@ pub(super) mod io
     }
 
     /// See [super::boxed_info()]
-    pub fn boxed_info<R: AsFd>(devid: u64, resource: R) -> IoResult<Box<DevInfo>>
+    pub fn boxed_info<R: AsFd>(devid: u64, resource: R) -> io::Result<Box<DevInfo>>
     {
         let mut info_args: Box<DevInfo> = unsafe { Box::new_zeroed().assume_init() };
 
@@ -130,7 +130,7 @@ pub(super) mod io
     /// See [super::iter()]
     pub fn iter<R: AsFd>(
         fd: R,
-    ) -> IoResult<impl Iterator<Item = IoResult<DevInfo>> + ExactSizeIterator>
+    ) -> io::Result<impl Iterator<Item = io::Result<DevInfo>> + ExactSizeIterator>
     {
         Iter::new_internal(fd)
     }
@@ -147,9 +147,9 @@ struct Iter<R: AsFd>
 
 impl<R: AsFd> Iter<R>
 {
-    fn new_internal(fs: R) -> IoResult<Self>
+    fn new_internal(fs: R) -> io::Result<Self>
     {
-        crate::fs::io::info(fs.as_fd(), crate::Flags::NONE).map(|fs_info| Iter {
+        crate::fs::fd::info(fs.as_fd(), crate::Flags::NONE).map(|fs_info| Iter {
             fs,
             max_id: fs_info.max_id(),
             num_devices: fs_info.num_devices(),
@@ -163,7 +163,7 @@ impl<R: AsFd> ExactSizeIterator for Iter<R> {}
 
 impl<R: AsFd> Iterator for Iter<R>
 {
-    type Item = IoResult<DevInfo>;
+    type Item = io::Result<DevInfo>;
 
     fn next(&mut self) -> Option<Self::Item>
     {

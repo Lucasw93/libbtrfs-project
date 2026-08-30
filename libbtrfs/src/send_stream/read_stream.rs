@@ -2,10 +2,9 @@ use super::handler::{
     StreamHandler,
     command::{EndCmd, SendCmd},
 };
-use crate::util::IoResult;
 use rtrb::{PopError, RingBuffer};
 use std::{
-    io::Read,
+    io::{self, Read},
     mem,
     range::Range,
     sync::Arc,
@@ -95,7 +94,7 @@ impl<R: Read> SendStream<R>
     }
 
     /// Read and handle all send commands with the provided `handler`
-    pub fn read_and_handle<H: StreamHandler>(&mut self, mut handler: H) -> IoResult<()>
+    pub fn read_and_handle<H: StreamHandler>(&mut self, mut handler: H) -> io::Result<()>
     {
         self.read_header()?;
         loop {
@@ -118,7 +117,7 @@ impl<R: Read> SendStream<R>
     }
 
     /// Buffered read and handle using rtrb::RingBuffer channels
-    pub fn read_and_handle_buffered<H: StreamHandler>(&mut self, mut handler: H) -> IoResult<()>
+    pub fn read_and_handle_buffered<H: StreamHandler>(&mut self, mut handler: H) -> io::Result<()>
     {
         // NOTE: this function is mainly helpful with a very fast reader. For example reading from a
         // send-stream that has been saved on disk. To get the fastest reader, wrap a File that
@@ -148,7 +147,7 @@ impl<R: Read> SendStream<R>
             let version = self.version;
 
             let (mut s_data, mut r_data) = RingBuffer::<(u16, Range<usize>, Vec<u8>)>::new(nbuf);
-            let (mut s_free, mut r_free) = RingBuffer::<IoResult<Vec<u8>>>::new(nbuf);
+            let (mut s_free, mut r_free) = RingBuffer::<io::Result<Vec<u8>>>::new(nbuf);
 
             for _ in 0..(nbuf - 1) {
                 // prime the channel so calls to r_free.pop() will not be empty.
@@ -253,28 +252,28 @@ impl<R: Read> SendStream<R>
      * done to get the best performance for receiving a btrfs send stream. Currently there is not
      * much of a performance increaese over a non buffered receive.
      *
-    pub fn read_and_handle_buffered<H: StreamHandler>(&mut self, mut handler: H)
-    -> IoResult<()>
+    pub fn _read_and_handle_buffered<H: StreamHandler>(&mut self, mut handler: H)
+    -> io::Result<()>
     {
         self.read_header()?;
 
         struct Shared
         {
             buf: Vec<u8>,
-            payload: Range<usize>,
-            cmd: u16,
+            data: Range<usize>,
+            command: u16,
         }
 
         let version = self.version;
         let cmd_is_stale = std::sync::atomic::AtomicBool::new(true);
         let cmd_data = std::sync::Mutex::new(Shared {
-            buf: vec![0; SendStream::<R>::BUF_SZ_V1],
-            payload: self.payload,
-            cmd: self.cmd,
+            buf: vec![0; SendStream::BUF_SZ_V1],
+            data: self.data,
+            command: self.command,
         });
 
         thread::scope(|env| {
-            env.spawn(|| -> IoResult<()> {
+            env.spawn(|| -> io::Result<()> {
                 //let mut io_wait_time = std::time::Duration::ZERO;
 
                 loop {
@@ -289,8 +288,8 @@ impl<R: Read> SendStream<R>
 
                         let guard = cmd_data.lock().unwrap();
 
-                        let data = &guard.buf[guard.payload];
-                        let cmd = guard.cmd;
+                        let data = &guard.buf[guard.data];
+                        let cmd = guard.command;
 
                         if handler.handle_cmd(cmd, data, version)?.is_none() {
                             break;
@@ -307,7 +306,7 @@ impl<R: Read> SendStream<R>
 
             //let mut reader_wait_time = std::time::Duration::ZERO;
 
-            while self.cmd != EndCmd::KEY {
+            while self.command != EndCmd::KEY {
                 self.read_cmd()?;
 
                 //let start = std::time::Instant::now();
@@ -321,8 +320,8 @@ impl<R: Read> SendStream<R>
 
                     let mut guard = cmd_data.lock().unwrap();
 
-                    guard.cmd = self.cmd;
-                    guard.payload = self.payload;
+                    guard.command = self.command;
+                    guard.data = self.data;
                     mem::swap(&mut guard.buf, &mut self.buf);
 
                     cmd_is_stale.store(false, Ordering::Release);
@@ -336,7 +335,7 @@ impl<R: Read> SendStream<R>
     }
     */
 
-    fn read_header(&mut self) -> IoResult<()>
+    fn read_header(&mut self) -> io::Result<()>
     {
         self.reader
             .read_exact(&mut self.buf[..size_of::<StreamHeader>()])?;
@@ -357,7 +356,7 @@ impl<R: Read> SendStream<R>
         Ok(())
     }
 
-    fn read_cmd(&mut self) -> IoResult<()>
+    fn read_cmd(&mut self) -> io::Result<()>
     {
         // update the atomic position on a 4M interval
         const BLOCK_MASK: u64 = !0x3F_FFFF;

@@ -41,11 +41,12 @@ use crate::{
         BTRFS_IOC_TREE_SEARCH, BTRFS_IOC_TREE_SEARCH_V2, btrfs_ioctl_search_args,
         btrfs_ioctl_search_args_v2, btrfs_ioctl_search_header, btrfs_ioctl_search_key,
     },
-    util::{IoResult, btrfs_ioctl},
+    util::btrfs_ioctl,
 };
 use std::{
     alloc::{Layout, alloc, dealloc, handle_alloc_error},
     fs::File,
+    io,
     marker::PhantomData,
     mem::{ManuallyDrop, MaybeUninit},
     ops::{Bound, RangeBounds},
@@ -156,7 +157,7 @@ pub trait Query
     fn query<'buf, F, K>(
         &'buf mut self,
         on_drop: F,
-    ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
+    ) -> io::Result<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
     where
         K: FromDiskKey,
         F: FnOnce(DiskKey) -> K;
@@ -346,7 +347,7 @@ impl<R: AsFd> Query for TreeSearch<R>
     fn query<'buf, F, K>(
         &'buf mut self,
         on_drop: F,
-    ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
+    ) -> io::Result<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
     where
         K: FromDiskKey,
         F: FnOnce(DiskKey) -> K,
@@ -419,7 +420,7 @@ impl<R: AsFd> Query for BoxedTreeSearch<R>
     fn query<'buf, F, K>(
         &'buf mut self,
         on_drop: F,
-    ) -> IoResult<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
+    ) -> io::Result<impl Iterator<Item = SearchItem<'buf>> + ExactSizeIterator>
     where
         K: FromDiskKey,
         F: FnOnce(DiskKey) -> K,
@@ -471,7 +472,7 @@ impl SearchBuilder<File>
     /// Constructs a new `SearchBuilder` from a path.
     ///
     /// This is fallible, see [`SearchBuilder::new()`] for an infallible variant.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> IoResult<Self>
+    pub fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self>
     {
         Ok(Self {
             key: Default::default(),
