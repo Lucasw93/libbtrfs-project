@@ -1,43 +1,33 @@
-#=================================================
-# Config file for rustfmt
-# 
-# config options:
-#   <https://rust-lang.github.io/rustfmt>
-#   $ rustfmt --help=config
-#   $ rustfmt --print-config=default
-#=================================================
-
-# Stable features
-
+# https://rust-lang.github.io/rustfmt
+# ====================================================================
+# NOTE: uses unstable features
+#
+# `rustfmt` or `cargo fmt` both require the nightly toolchain 
+# ====================================================================
 edition = "2024"
-
-max_width = 99
-hard_tabs = false
-tab_spaces = 4
-struct_lit_width = 45
-
-# Unstable features, requires nightly toolchain
-# $ rustfmt +nightly
-# $ cargo +nightly fmt
-
 unstable_features = true
 
-# indent_style = "Visual"
-# chain_width = 99
+# line width
+struct_lit_width = 45
+single_line_if_else_max_width = 75
 
-brace_style = "AlwaysNextLine"		
-control_brace_style = "AlwaysSameLine"
-
-make_backup = false
+# single line
 fn_single_line = false
 where_single_line = false
 
-inline_attribute_width = 0
+# braces
+brace_style = "AlwaysNextLine"
+control_brace_style = "AlwaysSameLine"
 
-# doc comments
+# rustdoc comments
 wrap_comments = false
 comment_width = 80
 
-# doc code
+# rustdoc code
 format_code_in_doc_comments = true
 doc_comment_code_block_width = 100
+
+#
+# indent_style = "Visual"
+# chain_width = 99
+#

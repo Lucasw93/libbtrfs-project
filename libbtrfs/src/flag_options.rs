@@ -89,7 +89,7 @@ impl Flags
     }
 
     /*
-     * The SendBuilder now has a function for each flag instead of single flags functions 
+     * The SendBuilder now has a function for each flag instead of single flags functions
      * where these flags can be passed in.
     const SEND_MASK: u64 = Flags::NO_FILE_DATA.bits()
         | Flags::OMIT_STREAM_HEADER.bits()

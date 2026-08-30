@@ -43,7 +43,10 @@ fn search_boxed() -> std::io::Result<()>
             if let Some(ri) = item.get::<RootItem>() {
                 eprintln!(" - UUID: {:?}", ri.uuid())
             } else if let Some(rr) = item.get::<RootRef>() {
-                eprintln!(" - name: {:?}", String::from_utf8_lossy( rr.name_as_bytes().unwrap() ))
+                eprintln!(
+                    " - name: {:?}",
+                    String::from_utf8_lossy(rr.name_as_bytes().unwrap())
+                )
             }
         });
 
@@ -72,9 +75,7 @@ fn search_subvols_example() -> std::io::Result<()>
                     "ID {} level {} name {}",
                     item.offset(),
                     item.objectid(),
-                    String::from_utf8_lossy(
-                        rr.name_as_bytes()?
-                    )
+                    String::from_utf8_lossy(rr.name_as_bytes()?)
                 )
             }
         }

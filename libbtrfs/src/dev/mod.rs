@@ -158,8 +158,7 @@ pub mod io
     {
         fn rm_dev_v1<R: AsFd>(device: &[u8], resource: R) -> IoResult<()>
         {
-            let mut vol_args: btrfs_ioctl_vol_args =
-                unsafe { MaybeUninit::zeroed().assume_init() };
+            let mut vol_args: btrfs_ioctl_vol_args = unsafe { MaybeUninit::zeroed().assume_init() };
 
             set_vol_name(device, &mut vol_args.name)
                 .and_then(|_| btrfs_ioctl(resource, BTRFS_IOC_RM_DEV, &mut vol_args))

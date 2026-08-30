@@ -194,11 +194,7 @@ where
 
             self.send_fd = writer.as_raw_fd() as i64;
 
-            let pipe_sz = if self.version > 1 {
-                Self::BUFSZ_V2
-            } else {
-                Self::BUFSZ_V1
-            };
+            let pipe_sz = if self.version > 1 { Self::BUFSZ_V2 } else { Self::BUFSZ_V1 };
             syscall!(unsafe { fcntl(reader.as_raw_fd(), F_SETPIPE_SZ, pipe_sz) })?;
 
             Some((handler, reader, writer))
@@ -247,11 +243,7 @@ where
 
             self.send_fd = writer.as_raw_fd() as i64;
 
-            let pipe_sz = if self.version > 1 {
-                Self::BUFSZ_V2
-            } else {
-                Self::BUFSZ_V1
-            };
+            let pipe_sz = if self.version > 1 { Self::BUFSZ_V2 } else { Self::BUFSZ_V1 };
             syscall!(unsafe { fcntl(reader.as_raw_fd(), F_SETPIPE_SZ, pipe_sz) })?;
 
             Some(thread::spawn(move || {

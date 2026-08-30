@@ -222,11 +222,7 @@ pub mod io
             .objectid(..=treeid)
             .item_type(
                 { BTRFS_ROOT_ITEM_KEY }..{
-                    if got_root_ref {
-                        BTRFS_ROOT_ITEM_KEY
-                    } else {
-                        BTRFS_ROOT_BACKREF_KEY
-                    }
+                    if got_root_ref { BTRFS_ROOT_ITEM_KEY } else { BTRFS_ROOT_BACKREF_KEY }
                 },
             )
             .build();
