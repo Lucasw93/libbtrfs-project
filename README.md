@@ -2,9 +2,9 @@
 
 `libbtrfs` provides a Rust API for interacting with the BTRFS filesystem.
 
-### *This API is subjest to change*
+### *This API is subject to change*
 
-This library is in the early stages of development Future versions my introduce breaking changes.
+This library is in the early stages of development. Future versions my introduce breaking changes.
 
 ## Examples and Documentation
 
