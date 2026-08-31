@@ -1,6 +1,6 @@
 [package]
 name = "libbtrfs"
-version = "0.0.30"
+version = "0.0.40"
 description = "Rust library for working with the btrfs filesystem"
 keywords = ["btrfs", "linux"]
 categories = ["api-bindings", "filesystem", "os::linux-apis"]
