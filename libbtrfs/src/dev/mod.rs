@@ -85,7 +85,7 @@ pub fn get_boxed_stats<P: AsRef<Path>>(devid: u64, fs: P) -> io::Result<Box<DevS
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn add<P: AsRef<Path>>(device: P, fs: P) -> io::Result<()>
+pub fn add<D: AsRef<Path>, F: AsRef<Path>>(device: D, fs: F) -> io::Result<()>
 {
     File::open(fs).and_then(|f| fd::add(device, f))
 }
@@ -95,7 +95,7 @@ pub fn add<P: AsRef<Path>>(device: P, fs: P) -> io::Result<()>
 /// # Notes
 ///
 /// **Requires CAP_SYS_ADMIN capabilities**
-pub fn rm<P: AsRef<Path>>(device: P, fs: P) -> io::Result<()>
+pub fn rm<D: AsRef<Path>, F: AsRef<Path>>(device: D, fs: F) -> io::Result<()>
 {
     File::open(fs).and_then(|f| fd::rm(device, f))
 }
