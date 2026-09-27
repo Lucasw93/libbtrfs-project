@@ -34,16 +34,17 @@ pub use info::{SubvolInfo, Timespec, get_boxed_info, get_info, get_info_by_id};
 pub use iterator::{SubvolItem, iter};
 pub use rootref::{SubvolRootRef, get_rootref};
 
-/// Btrfs subvolume snapshots
+/// Btrfs subvolume snapshots.
 pub mod snap
 {
     use super::*;
-    /// Create a btrfs snapshot
+    /// Create a btrfs snapshot.
     ///
-    /// This function will attempt to create a btrfs snapshot named `destination` of the subvolume
-    /// referenced by `source`. The `readonly` argument determines the read-only status for the
-    /// snapshot. The owner and group for the The newly created snapshot will be the same as the
-    /// subvolume referened by `source`
+    /// This function creates a btrfs snapshot at `destination` from the
+    /// subvolume referenced by `source`. The `readonly` argument determines
+    /// the read-only status for the snapshot.
+    ///
+    /// The snapshot's owner and group will be the same as the `source` subvolume.
     ///
     /// # Errors
     ///
@@ -72,10 +73,10 @@ pub mod snap
     /// # Examples
     ///
     /// ```no_run
-    /// let snapvol = "/path/to/subvolume/named/foo";
+    /// let src = "/path/to/subvolume/named/foo";
     ///
     /// // create a read-only snapshot of `foo` called `foo_snapshot`
-    /// libbtrfs::snap::create(snapvol, "/.snapshots/foo_snapshot", true)?;
+    /// libbtrfs::snap::create(src, "/.snapshots/foo_snapshot", true)?;
     ///
     /// # Ok::<(), std::io::Error>(())
     /// ```
@@ -99,7 +100,7 @@ pub mod snap
         /// See [super::create()]
         pub fn create<S: AsFd, D: AsFd, N: AsRef<[u8]>>(
             source: S,
-            destination: D,
+            destdir: D,
             name: N,
             readonly: bool,
         ) -> io::Result<()>
@@ -113,7 +114,7 @@ pub mod snap
             vol_args.fd = source.as_fd().as_raw_fd() as i64;
 
             set_vol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
-                .and_then(|_| btrfs_ioctl(destination, BTRFS_IOC_SNAP_CREATE_V2, &mut vol_args))
+                .and_then(|_| btrfs_ioctl(destdir, BTRFS_IOC_SNAP_CREATE_V2, &mut vol_args))
         }
     }
 }
@@ -257,7 +258,7 @@ pub fn destroy_by_id<P: AsRef<Path>>(subvolid: u64, fs: P) -> io::Result<()>
 /// Gets the full subvolume path to the filesystem root.
 ///
 /// This function returns The full path to the filesystem root for the subvolume with id of
-/// `treeid` in the btrfs filesystem referend by `fs`. This path is not relative to a btrfs mount
+/// `treeid` in the btrfs filesystem referenced by `fs`. This path is not relative to a btrfs mount
 /// point but is relative to the level 5 (BTRFS_FS_TREE_OBJECTID) subvolume for the filesystem.
 ///
 /// # Notes
