@@ -40,34 +40,34 @@ pub mod snap
     use super::*;
     /// Create a btrfs snapshot
     ///
-    /// This function will attempt to create a btrfs snapshot named `pathname` of the subvolume
-    /// referenced by `snapvol`. The `readonly` argument determines the read-only status for the
+    /// This function will attempt to create a btrfs snapshot named `destination` of the subvolume
+    /// referenced by `source`. The `readonly` argument determines the read-only status for the
     /// snapshot. The owner and group for the The newly created snapshot will be the same as the
-    /// subvolume referened by `snapvol`
+    /// subvolume referened by `source`
     ///
     /// # Errors
     ///
     /// [`ErrorKind::AlreadyExists`]
     ///
-    /// > `pathname` refers to to a file that already exists.
+    /// > `destination` refers to to a file that already exists.
     ///
     /// [`ErrorKind::CrossesDevices`]
     ///
-    /// > `snapvol` does not refer to a file or directory within the same filesystem as `pathname`.
+    /// > `source` does not refer to a file or directory within the same filesystem as `destination`.
     ///
     /// [`ErrorKind::InvalidInput`]
     ///
-    /// > `snapvol` does not refer to a subvolume root.
+    /// > `source` does not refer to a subvolume root.
     ///
     /// [`ErrorKind::NotADirectory`]
     ///
-    /// > A component used as a directory in `pathname` is not, in fact, a directory.
+    /// > A component used as a directory in `destination` is not, in fact, a directory.
     ///
     /// [`ErrorKind::PermissionDenied`]
     ///
     /// > Filesystem UID for the current process does not match the UID of the subvolume referenced
-    /// by `snapvol`. Note that this is not required if the current user has `CAP_FOWNER`
-    /// permissions.
+    /// > by `source`. Note that this is not required if the current user has `CAP_FOWNER`
+    /// > permissions.
     ///
     /// # Examples
     ///
@@ -79,12 +79,16 @@ pub mod snap
     ///
     /// # Ok::<(), std::io::Error>(())
     /// ```
-    pub fn create<P: AsRef<Path>>(snapvol: P, pathname: P, readonly: bool) -> io::Result<()>
+    pub fn create<S: AsRef<Path>, D: AsRef<Path>>(
+        source: S,
+        destination: D,
+        readonly: bool,
+    ) -> io::Result<()>
     {
-        let snapvol = File::open(snapvol)?;
+        let source = File::open(source)?;
 
-        open_parent_with_name(pathname.as_ref())
-            .and_then(|(dir, name)| fd::create(snapvol.into(), dir, name, readonly))
+        open_parent_with_name(destination.as_ref())
+            .and_then(|(dir, name)| fd::create(source, dir, name, readonly))
     }
 
     /// Entry for file system resources.
@@ -93,9 +97,9 @@ pub mod snap
         use super::*;
 
         /// See [super::create()]
-        pub fn create<R: AsFd, N: AsRef<[u8]>>(
-            snapvol: R,
-            dir: R,
+        pub fn create<S: AsFd, D: AsFd, N: AsRef<[u8]>>(
+            source: S,
+            destination: D,
             name: N,
             readonly: bool,
         ) -> io::Result<()>
@@ -106,10 +110,10 @@ pub mod snap
             if readonly {
                 vol_args.flags |= BTRFS_SUBVOL_RDONLY
             }
-            vol_args.fd = snapvol.as_fd().as_raw_fd() as i64;
+            vol_args.fd = source.as_fd().as_raw_fd() as i64;
 
             set_vol_name(name.as_ref(), unsafe { &mut vol_args.inner2.name })
-                .and_then(|_| btrfs_ioctl(dir, BTRFS_IOC_SNAP_CREATE_V2, &mut vol_args))
+                .and_then(|_| btrfs_ioctl(destination, BTRFS_IOC_SNAP_CREATE_V2, &mut vol_args))
         }
     }
 }
